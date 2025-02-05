@@ -9,28 +9,27 @@ from pysrs.new_mains.galvo_funcs import Galvo
 from pysrs.new_mains.run_image_2d import raster_scan
 
 def start_scan(gui):
-    # We do not show a message box; we simply disable the button in the GUI code so it won't be called again.
     if gui.running:
-        # If for some reason it's called again, just return silently
-        return
+        return # this should never get called but if for some reason it does, probably need to elegantly handle the error
 
+    # FIXME: will change this once i get RPOC actually implemented
     rpoc_mask = None
     rpoc_do_chan = None
     if gui.rpoc_enabled.get() and gui.apply_mask_var.get():
         if hasattr(gui, 'rpoc_mask') and gui.rpoc_mask is not None:
             rpoc_mask = gui.rpoc_mask
-            rpoc_do_chan = gui.mask_ttl_channel_var.get().strip()
+            rpoc_do_chan = gui.mask_ttl_channel_var.get().strip() 
         else:
             messagebox.showerror("Mask Error", "No valid mask loaded.")
             return
 
     gui.running = True
 
-    # Disable 'Acquire' and 'Acq. Continuous'
     gui.continuous_button['state'] = 'disabled'
     gui.single_button['state'] = 'disabled'
     gui.stop_button['state'] = 'normal'
 
+    # need to thread the acquisition so the gui still runs smoothly
     threading.Thread(
         target=scan,
         args=(gui,),
@@ -55,7 +54,7 @@ def scan(gui, rpoc_mask=None, rpoc_do_chan=None):
             if gui.simulation_mode.get():
                 data_list = generate_data(len(channels), config=gui.config)
             else:
-                data_list = raster_scan(channels, galvo)
+                data_list = raster_scan(channels, galvo) # this will probably be where i coordinate what kind of scan i do, all actual do-ers of nidaqmx tasks will be in run_image_2d.py
 
             gui.root.after(0, display_data, gui, data_list)
     except Exception as e:
@@ -67,7 +66,6 @@ def scan(gui, rpoc_mask=None, rpoc_do_chan=None):
         gui.stop_button['state'] = 'disabled'
 
 def acquire(gui, startup=False):
-    # No 'Stop continuous first' message box: we rely on disabling the buttons in the GUI.
     if gui.running and not startup:
         return  # do nothing if scanning is ongoing
 
@@ -77,6 +75,7 @@ def acquire(gui, startup=False):
     gui.single_button['state'] = 'disabled'
 
     try:
+        # 4 cases that all require >= 1 acquisition consecutively
         gui.update_config()
         if gui.hyperspectral_enabled.get() and gui.save_acquisitions.get():
             numshifts_str = gui.entry_numshifts.get().strip()
@@ -97,6 +96,7 @@ def acquire(gui, startup=False):
             numshifts_str = gui.save_num_entry.get().strip()
             filename = None
 
+        # extra error handling is never a bad thing maybe
         try:
             numshifts = int(numshifts_str)
             if numshifts < 1:
@@ -183,7 +183,7 @@ def acquire_hyperspectral(gui, numshifts):
         pil_images = [convert(d) for d in data_list]
         images.append(pil_images)
 
-        gui.progress_label.config(text=f'({i + 1}/{numshifts})')
+        gui.progress_label.config(text=f'({i + 1}/{numshifts})') # update the counter so the user doesnt get bored
         gui.root.update_idletasks()
 
     return images
@@ -229,5 +229,5 @@ def save_images(gui, images, filename):
         saved_fnames.append(new_filename)
 
     msg = "Saved frames:\n" + "\n".join(saved_fnames)
-    messagebox.showinfo('Done', msg)
+    messagebox.showinfo('Done', msg) # maybe dont need this here... probably is nice to see though
     gui.progress_label.config(text=f'(0/{len(images)})')

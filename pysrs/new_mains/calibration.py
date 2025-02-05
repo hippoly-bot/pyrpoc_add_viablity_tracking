@@ -7,6 +7,7 @@ from pysrs.new_mains.galvo_funcs import Galvo
 from pysrs.new_mains.run_image_2d import raster_scan  # was lockin_scan before
 from pysrs.new_mains.utils import generate_data
 
+# TODO: make the calibration plot dark mode because pretty
 def calibrate_stage(gui):
     cal_win = tk.Toplevel(gui.root)
     cal_win.title("Stage Calibration")
@@ -83,7 +84,7 @@ def calibrate_stage(gui):
                 cal_running[0] = False
                 break
 
-            # Acquire data (simulation or real)
+            # TODO: calibration can still acquire simulation - probably good to display a warning about that though
             if gui.simulation_mode.get():
                 data_list = generate_data(len(gui.config['ai_chans']), config=gui.config)
                 data = data_list[0]
@@ -115,7 +116,7 @@ def calibrate_stage(gui):
         if not cal_running[0]:
             threading.Thread(target=run_calibration, daemon=True).start()
 
-    start_button.configure(command=start_cal)
+    start_button.configure(command=start_cal) 
 
     stop_button = ttk.Button(
         config_frame, text='Stop Calibration',

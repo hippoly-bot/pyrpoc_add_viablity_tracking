@@ -222,7 +222,7 @@ class RPOC:
             return ImageOps.invert(self.original_image)
         return self.original_image
 
-    def update_mask_image(self):
+    def update_mask_image(self): # whoneedswhitespace?
         self.mask_canvas.delete("all")
         base = self.get_base_image()
         gray = base.convert('L')

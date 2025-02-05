@@ -3,6 +3,7 @@ import math
 import tkinter as tk
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
+# the axes updating and the dynamic colorbars are wizardry from chatgpt, thanks john AI
 def create_axes(gui, n_channels):
     gui.fig.clf()
     gui.fig.patch.set_facecolor('#1E1E1E')
@@ -62,7 +63,6 @@ def display_data(gui, data_list):
         ax_main = ch_ax["main"]
         ny, nx = data.shape
 
-        # Determine user-facing label from channel_names
         if 'channel_names' in gui.config and i < len(gui.config['channel_names']):
             channel_name = gui.config['channel_names'][i]
         else:
@@ -70,7 +70,6 @@ def display_data(gui, data_list):
 
         ax_main.set_title(channel_name, fontsize=10, color='white')
 
-        # Build extents
         x_extent = np.linspace(
             gui.config['offset_x'] - gui.config['amp_x'],
             gui.config['offset_x'] + gui.config['amp_x'],
@@ -109,7 +108,6 @@ def display_data(gui, data_list):
             im = ch_ax["img_handle"]
             im.set_data(data)
 
-            # colorbar logic keyed by channel_name
             auto_scale_var = gui.auto_colorbar_vars.get(channel_name, tk.BooleanVar(value=True))
             auto_scale = auto_scale_var.get()
             if auto_scale:

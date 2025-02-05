@@ -4,10 +4,6 @@ import numpy as np
 from pysrs.new_mains.galvo_funcs import Galvo
 
 def raster_scan(ai_channels, galvo):
-    """
-    2D raster acquisition from the provided analog input channels
-    using galvo.waveform: X + Y (+ optional RPOC).
-    """
     if isinstance(ai_channels, str):
         ai_channels = [ai_channels]
 
@@ -15,7 +11,6 @@ def raster_scan(ai_channels, galvo):
         ao_channels = list(galvo.ao_chans)
         composite_wave = galvo.waveform.copy()
 
-        # AO channels
         for chan in ao_channels:
             ao_task.ao_channels.add_ao_voltage_chan(f'{galvo.device}/{chan}')
         ao_task.timing.cfg_samp_clk_timing(
@@ -24,7 +19,6 @@ def raster_scan(ai_channels, galvo):
             samps_per_chan=composite_wave.shape[1]
         )
 
-        # AI channels
         for ch in ai_channels:
             ai_task.ai_channels.add_ai_voltage_chan(ch)
 
@@ -53,7 +47,7 @@ def raster_scan(ai_channels, galvo):
     results = []
 
     if n_ch == 1:
-        # shape => (total_y, total_x, pixel_samples)
+        # shape is (total_y, total_x, pixel_samples), dont forget that u dummy
         acq_data = acq_data.reshape(galvo.total_y, galvo.total_x, galvo.pixel_samples)
         data2d = np.mean(acq_data, axis=2)
 
@@ -73,13 +67,7 @@ def raster_scan(ai_channels, galvo):
             results.append(cropped)
         return results
 
-def raster_scan_with_ttl(ai_channels, galvo, ttl_do_chan="port0/line0"):
-    """
-    2D raster acquisition from the provided analog input channels
-    using galvo.waveform: X + Y (+ optional RPOC), while also sending a TTL signal.
-
-    The TTL signal will be high for the first half of the scan and low for the second half.
-    """
+def digital_test(ai_channels, galvo, ttl_do_chan="port0/line0"):
     if isinstance(ai_channels, str):
         ai_channels = [ai_channels]
 
@@ -87,7 +75,6 @@ def raster_scan_with_ttl(ai_channels, galvo, ttl_do_chan="port0/line0"):
         ao_channels = list(galvo.ao_chans)
         composite_wave = galvo.waveform.copy()
 
-        # AO channels
         for chan in ao_channels:
             ao_task.ao_channels.add_ao_voltage_chan(f'{galvo.device}/{chan}')
         ao_task.timing.cfg_samp_clk_timing(
@@ -96,7 +83,6 @@ def raster_scan_with_ttl(ai_channels, galvo, ttl_do_chan="port0/line0"):
             samps_per_chan=composite_wave.shape[1]
         )
 
-        # AI channels
         for ch in ai_channels:
             ai_task.ai_channels.add_ai_voltage_chan(ch)
 
@@ -112,11 +98,10 @@ def raster_scan_with_ttl(ai_channels, galvo, ttl_do_chan="port0/line0"):
             samps_per_chan=galvo.total_samples
         )
 
-        # TTL Signal: High for first half, Low for second half
         ttl_signal = np.zeros(galvo.total_samples, dtype=np.uint8)
-        ttl_signal[:galvo.total_samples // 2] = 1  # First half high
+        ttl_signal[:galvo.total_samples // 2] = 1  # half of the signal is high, other half is low
 
-        do_task.do_channels.add_do_chan(f"{galvo.device}/{ttl_do_chan}", line_grouping=LineGrouping.CHAN_PER_LINE)
+        do_task.do_channels.add_do_chan(f"{galvo.device}/{ttl_do_chan}", line_grouping=LineGrouping.CHAN_PER_LINE) # linegrouping isnt a thing
         do_task.timing.cfg_samp_clk_timing(
             rate=galvo.rate,
             source=f'/{galvo.device}/ao/SampleClock',
@@ -178,6 +163,6 @@ if __name__ == "__main__":
 
     galvo = Galvo(config)
 
-    acquired_data = raster_scan_with_ttl(['Dev1/ai0'], galvo, ttl_do_chan="port0/line0")
+    acquired_data = digital_test(['Dev1/ai0'], galvo, ttl_do_chan="port0/line0")
 
     print("Scan complete. Data shape:", acquired_data[0].shape)
