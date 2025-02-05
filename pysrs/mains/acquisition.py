@@ -130,9 +130,7 @@ def acquire_multiple(gui, numshifts):
     images = []
     gui.progress_label.config(text=f'(0/{numshifts})')
     gui.root.update_idletasks()
-
-    print(gui.apply_mask_var.get())
-
+    
     channels = [f"{gui.config['device']}/{ch}" for ch in gui.config['ai_chans']]
     galvo = Galvo(gui.config)
 
@@ -146,7 +144,7 @@ def acquire_multiple(gui, numshifts):
             data_list = generate_data(len(channels), config=gui.config)
         else:
             if gui.rpoc_mask is not None:
-                data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var)
+                data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var.get())
             else:
                 data_list = raster_scan(channels, galvo)
         gui.root.after(0, display_data, gui, data_list)
