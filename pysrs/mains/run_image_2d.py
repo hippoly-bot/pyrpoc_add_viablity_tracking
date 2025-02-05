@@ -3,6 +3,7 @@ from nidaqmx.constants import AcquisitionType
 import numpy as np
 from pysrs.mains.galvo_funcs import Galvo
 import matplotlib.pyplot as plt
+from PIL import Image, ImageTk, ImageDraw, ImageOps
 
 def raster_scan(ai_channels, galvo):
     if isinstance(ai_channels, str):
@@ -101,26 +102,30 @@ def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line4", ttl_do_cha
             samps_per_chan=galvo.total_samples
         )
 
-        ttl_signal_user1 = np.zeros(galvo.total_samples, dtype=bool)
-        ttl_signal_user2 = np.zeros(galvo.total_samples, dtype=bool)
-        for i in range(len(ttl_signal_user1)):
-            if (int(i/150000))%2 == 0:
-                ttl_signal_user1[i] = True
-                ttl_signal_user2[i]= True
-            else:
-                ttl_signal_user1[i] = False
-                ttl_signal_user2[i] = False
+
+        image = Image.open(r'C:\Users\Lab Admin\Documents\Python Scripts\new_pysrs\asd.png')
+        ttl_signal_user1 = build_rpoc_wave(image, pixel_samples=galvo.total_samples/(galvo.numsteps_x*galvo.numsteps_y), total_x=galvo.numsteps_x, total_y=galvo.numsteps_y, high_voltage=5.0)
+        ttl_signal_user2 = build_rpoc_wave(image, pixel_samples=galvo.total_samples/(galvo.numsteps_x*galvo.numsteps_y), total_x=galvo.numsteps_x, total_y=galvo.numsteps_y, high_voltage=5.0)
+        # ttl_signal_user1 = np.zeros(galvo.total_samples, dtype=bool)
+        # ttl_signal_user2 = np.zeros(galvo.total_samples, dtype=bool)
+        # for i in range(len(ttl_signal_user1)):
+        #     if (int(i/150000))%2 == 0:
+        #         ttl_signal_user1[i] = True
+        #         ttl_signal_user2[i]= True
+        #     else:
+        #         ttl_signal_user1[i] = False
+        #         ttl_signal_user2[i] = False
 
         ttl_signals = np.array([ttl_signal_user1, ttl_signal_user2])
 
-        plt.figure(figsize=(10, 4))
-        plt.plot(ttl_signal_user1, label="TTL Signal USER1", linestyle="--")
-        plt.plot(ttl_signal_user2, label="TTL Signal USER2", linestyle=":")
-        plt.xlabel("Sample Index")
-        plt.ylabel("TTL Signal (0 or 1)")
-        plt.title("TTL Signals for USER1 and USER2")
-        plt.legend()
-        plt.show()
+        # plt.figure(figsize=(10, 4))
+        # plt.plot(ttl_signal_user1, label="TTL Signal USER1", linestyle="--")
+        # plt.plot(ttl_signal_user2, label="TTL Signal USER2", linestyle=":")
+        # plt.xlabel("Sample Index")
+        # plt.ylabel("TTL Signal (0 or 1)")
+        # plt.title("TTL Signals for USER1 and USER2")
+        # plt.legend()
+        # plt.show()
 
         do_task.do_channels.add_do_chan(f"{galvo.device}/{ttl_do_chan_user1}")
         do_task.do_channels.add_do_chan(f"{galvo.device}/{ttl_do_chan_user2}")
@@ -177,12 +182,32 @@ def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line4", ttl_do_cha
 
     return results
 
+@staticmethod
+def build_rpoc_wave(mask_image, pixel_samples, total_x, total_y, high_voltage=5.0):
+    mask_arr = np.array(mask_image)
+    binary_mask = (mask_arr > 128).astype(np.uint8)
+    print(f'mask image shape {binary_mask.shape}')
+
+    if binary_mask.shape != (total_y, total_x):
+        mask_pil = Image.fromarray(binary_mask * 255)
+        mask_resized = mask_pil.resize((total_x, total_y), Image.NEAREST)
+        binary_mask = (np.array(mask_resized) > 128).astype(np.uint8)
+
+    ttl_rows = [
+        np.repeat(binary_mask[row, :], pixel_samples)
+        for row in range(total_y)
+    ]
+    ttl_wave = np.concatenate(ttl_rows)
+    ttl_wave = ttl_wave * high_voltage
+    ttl_wave = ttl_wave.astype(bool)
+    return ttl_wave
+
 if __name__ == "__main__":
     config = {
-        "numsteps_x": 400,
-        "numsteps_y": 400,
-        "extrasteps_left": 50,
-        "extrasteps_right": 50,
+        "numsteps_x": 200,
+        "numsteps_y": 200,
+        "extrasteps_left": 0,
+        "extrasteps_right": 0,
         "offset_x": 0.0,
         "offset_y": 0.0,
         "dwell": 5e-5,
