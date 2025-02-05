@@ -377,7 +377,7 @@ class GUI:
         self.rpoc_channel_entry.bind("<FocusOut>", self.finalize_selection)
 
         ttk.Label(self.rpoc_frame, text='RPOC DO Line:').grid(row=4, column=0, padx=5, pady=5, sticky='e')
-        self.mask_ttl_channel_var = tk.StringVar(value="po4")
+        self.mask_ttl_channel_var = tk.StringVar(value="port0/line5")
         self.mask_ttl_entry = ttk.Entry(self.rpoc_frame, textvariable=self.mask_ttl_channel_var)
         self.apply_feedback_to_entry(self.mask_ttl_entry)
         self.mask_ttl_entry.grid(row=4, column=1, padx=5, pady=5, columnspan=1, sticky='ew')

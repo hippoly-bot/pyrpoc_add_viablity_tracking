@@ -95,8 +95,10 @@ def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
         )
 
         padded_mask = []
+        print(f'liune 98 of run image 2d')
         for row_idx in range(galvo.numsteps_y):
             row_data = mask[row_idx, :] 
+            print(f'line 101')
             padded_row = np.concatenate((
                 np.zeros(galvo.extrasteps_left, dtype=bool),
                 row_data,
@@ -135,7 +137,6 @@ def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
     if n_ch == 1:
         acq_data = acq_data.reshape(galvo.total_y, galvo.total_x, galvo.pixel_samples)
         data2d = np.mean(acq_data, axis=2)
-        # Crop out extrasteps_left and extrasteps_right:
         x1 = galvo.extrasteps_left
         x2 = galvo.extrasteps_left + galvo.numsteps_x
         cropped = data2d[:, x1:x2]
