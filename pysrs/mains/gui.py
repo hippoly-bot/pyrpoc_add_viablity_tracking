@@ -6,14 +6,14 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import threading, os
 from pathlib import Path
 from PIL import Image
-from pysrs.new_mains.zaber import ZaberStage
-from pysrs.new_mains.rpoc2 import RPOC
+from pysrs.mains.zaber import ZaberStage
+from pysrs.mains.rpoc2 import RPOC
 # Use the updated widgets with old-style aesthetics:
-from pysrs.new_mains.widgets import CollapsiblePane, ScrollableFrame
-from pysrs.new_mains.utils import Tooltip, generate_data, convert
-from pysrs.new_mains import acquisition
-from pysrs.new_mains import calibration
-from pysrs.new_mains import display
+from pysrs.mains.widgets import CollapsiblePane, ScrollableFrame
+from pysrs.mains.utils import Tooltip, generate_data, convert
+from pysrs.mains import acquisition
+from pysrs.mains import calibration
+from pysrs.mains import display
 import math
 from pysrs.instruments.prior_stage.prior_stage_movement_test import send_command, wait_for_z_motion
 
