@@ -3,10 +3,10 @@ import os
 from tkinter import messagebox
 import numpy as np
 from PIL import Image
-from .utils import generate_data, convert
-from .display import display_data
-from .galvo_funcs import Galvo
-from .run_image_2d import raster_scan
+from pysrs.new_mains.utils import generate_data, convert
+from pysrs.new_mains.display import display_data
+from pysrs.new_mains.galvo_funcs import Galvo
+from pysrs.new_mains.run_image_2d import raster_scan
 
 def start_scan(gui):
     # We do not show a message box; we simply disable the button in the GUI code so it won't be called again.

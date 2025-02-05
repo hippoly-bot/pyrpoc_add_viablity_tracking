@@ -1,7 +1,7 @@
 import nidaqmx
 from nidaqmx.constants import AcquisitionType
 import numpy as np
-from .galvo_funcs import Galvo
+from pysrs.new_mains.galvo_funcs import Galvo
 
 def raster_scan(ai_channels, galvo):
     """

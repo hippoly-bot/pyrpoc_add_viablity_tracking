@@ -6,13 +6,13 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import threading, os
 from pathlib import Path
 from PIL import Image
-from .zaber import ZaberStage
-from .rpoc2 import RPOC
-from .widgets import CollapsiblePane, ScrollableFrame
-from .utils import Tooltip, generate_data, convert
-from . import acquisition
-from . import calibration
-from . import display
+from pysrs.new_mains.zaber import ZaberStage
+from pysrs.new_mains.rpoc2 import RPOC
+from pysrs.new_mains.widgets import CollapsiblePane, ScrollableFrame
+from pysrs.new_mains.utils import Tooltip, generate_data, convert
+from pysrs.new_mains import acquisition
+from pysrs.new_mains import calibration
+from pysrs.new_mains import display
 import math
 from pysrs.instruments.prior_stage.prior_stage_movement_test import send_command, wait_for_z_motion
 

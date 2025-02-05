@@ -3,9 +3,9 @@ from tkinter import ttk, messagebox
 import time, threading
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from .galvo_funcs import Galvo
-from .run_image_2d import raster_scan  # was lockin_scan before
-from .utils import generate_data
+from pysrs.new_mains.galvo_funcs import Galvo
+from pysrs.new_mains.run_image_2d import raster_scan  # was lockin_scan before
+from pysrs.new_mains.utils import generate_data
 
 def calibrate_stage(gui):
     cal_win = tk.Toplevel(gui.root)

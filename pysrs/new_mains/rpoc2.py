@@ -3,7 +3,49 @@ from tkinter import ttk, filedialog
 from PIL import Image, ImageTk, ImageDraw, ImageOps
 import numpy as np
 
+import tkinter as tk
+from tkinter import ttk, filedialog
+from PIL import Image, ImageTk, ImageDraw, ImageOps
+import numpy as np
+
+def build_rpoc_wave(mask_image, pixel_samples, total_x, total_y, high_voltage=5.0):
+    """
+    Convert the RPOC mask (PIL grayscale) into a TTL-style waveform.
+    This is repeated horizontally pixel_samples times, then stacked
+    for total_y rows.
+
+    Args:
+        mask_image (PIL.Image or numpy array): The RPOC mask image.
+        pixel_samples (int): Number of repeated samples per single pixel in X dimension.
+        total_x (int): Width in 'galvo' coordinate steps (including any padding).
+        total_y (int): Height in 'galvo' coordinate steps (including any padding).
+        high_voltage (float): Voltage to use for 'active' mask pixels.
+
+    Returns:
+        np.ndarray: 1D array of length (total_x * total_y * pixel_samples),
+                    containing 0 or high_voltage.
+    """
+    mask_arr = np.array(mask_image)
+    binary_mask = (mask_arr > 128).astype(np.uint8)
+
+    # If mismatch in shape, resize
+    if binary_mask.shape != (total_y, total_x):
+        mask_pil = Image.fromarray(binary_mask * 255)
+        mask_resized = mask_pil.resize((total_x, total_y), Image.NEAREST)
+        binary_mask = (np.array(mask_resized) > 128).astype(np.uint8)
+
+    # Build each row's repeated bits
+    ttl_rows = [
+        np.repeat(binary_mask[row, :], pixel_samples)
+        for row in range(total_y)
+    ]
+    ttl_wave = np.concatenate(ttl_rows)
+    ttl_wave = ttl_wave * high_voltage
+    return ttl_wave
+
+
 class ColorSlider(tk.Canvas):
+    # (No changes here; same as before)
     def __init__(self, master, min_val=0, max_val=255, init_val=0, width=200, height=20,
                  fill_side='left', accent_color='#4A90E2', bg_color='#505050', command=None, **kwargs):
         super().__init__(master, width=width, height=height, bg=bg_color, highlightthickness=0, **kwargs)
@@ -65,6 +107,7 @@ class ColorSlider(tk.Canvas):
         self.draw_slider()
         if self.command:
             self.command(value)
+
 
 class RPOC:
     def __init__(self, root, image=None):

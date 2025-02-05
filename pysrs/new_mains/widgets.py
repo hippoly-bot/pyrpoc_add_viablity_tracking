@@ -6,17 +6,22 @@ class CollapsiblePane:
         self.show = tk.BooleanVar(value=True)
         self.text = text
         self.gui = gui
-        self.frame = ttk.Frame(master)
-        self.header = ttk.LabelFrame(self.frame, text=text)
-        self.container = ttk.Frame(self.frame)
-        self.header.pack(fill="x", expand=True)
+
+        self.frame = ttk.Frame(master)  # The outermost frame
+        self.header = ttk.LabelFrame(self.frame, text=text)  # LabelFrame for collapsible header
+        self.container = ttk.Frame(self.frame)  # Holds the actual contents
+
+        self.header.pack(fill="x", expand=True)  # Make the header expand across the frame
         self.container.pack(fill="x", expand=True)
+
         self.toggle_btn = ttk.Button(self.header, text='-', width=2, command=self.toggle)
         self.toggle_btn.pack(side=tk.RIGHT, padx=5, pady=5)
-        self.frame.pack(fill="x", expand=True)
-        self.toggle()
+
+        self.frame.pack(fill="x", expand=True)  # Pack the outermost frame
+        self.toggle()  # Start collapsed
 
     def toggle(self):
+        """Expand or collapse the container frame."""
         if self.show.get():
             self.container.pack_forget()
             self.show.set(False)
@@ -25,6 +30,19 @@ class CollapsiblePane:
             self.container.pack(fill="x", expand=True)
             self.show.set(True)
             self.toggle_btn.configure(text='-')
+
+    def pack(self, *args, **kwargs):
+        """Expose pack() for the frame"""
+        self.frame.pack(*args, **kwargs)
+
+    def grid(self, *args, **kwargs):
+        """Expose grid() for the frame"""
+        self.frame.grid(*args, **kwargs)
+
+    def place(self, *args, **kwargs):
+        """Expose place() for the frame"""
+        self.frame.place(*args, **kwargs)
+
 
 class ScrollableFrame(ttk.Frame):
     def __init__(self, container, *args, **kwargs):
