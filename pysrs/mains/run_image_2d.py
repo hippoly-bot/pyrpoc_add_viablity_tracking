@@ -104,7 +104,7 @@ def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line4", ttl_do_cha
         ttl_signal_user1 = np.zeros(galvo.total_samples, dtype=bool)
         ttl_signal_user2 = np.zeros(galvo.total_samples, dtype=bool)
         for i in range(len(ttl_signal_user1)):
-            if (int(i/5))%2 == 0:
+            if (int(i/150000))%2 == 0:
                 ttl_signal_user1[i] = True
                 ttl_signal_user2[i]= True
             else:
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     }
 
     galvo = Galvo(config)
-    acquired_data = digital_test(['Dev1/ai0'], galvo)
+    acquired_data = digital_test(['Dev1/ai2'], galvo)
 
     print("Scan complete. Data shape:", acquired_data[0].shape)
 
