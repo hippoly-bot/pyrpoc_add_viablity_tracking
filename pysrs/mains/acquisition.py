@@ -8,6 +8,7 @@ from pysrs.mains.display import display_data
 from pysrs.mains.galvo_funcs import Galvo
 from pysrs.mains.run_image_2d import raster_scan, raster_scan_rpoc
 
+# TODO: combine scan with acquire method, no need to separate continuous acquisition from the other types
 def start_scan(gui):
     if gui.running:
         return # this should never get called but if for some reason it does, probably need to elegantly handle the error
@@ -130,7 +131,7 @@ def acquire_multiple(gui, numshifts):
     images = []
     gui.progress_label.config(text=f'(0/{numshifts})')
     gui.root.update_idletasks()
-    
+
     channels = [f"{gui.config['device']}/{ch}" for ch in gui.config['ai_chans']]
     galvo = Galvo(gui.config)
 
@@ -143,7 +144,7 @@ def acquire_multiple(gui, numshifts):
         if gui.simulation_mode.get():
             data_list = generate_data(len(channels), config=gui.config)
         else:
-            if gui.rpoc_mask is not None:
+            if gui.rpoc_mask is not None and gui.apply_mask_var.get():
                 data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var.get())
             else:
                 data_list = raster_scan(channels, galvo)

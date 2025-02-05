@@ -70,6 +70,7 @@ def raster_scan(ai_channels, galvo):
         return results
 
 def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
+    print('running rpoc')
     if isinstance(ai_channels, str):
         ai_channels = [ai_channels]
 
@@ -156,26 +157,6 @@ def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
             results.append(cropped)
 
     return results
-
-@staticmethod
-def build_rpoc_wave(mask_image, pixel_samples, total_x, total_y, high_voltage=5.0):
-    mask_arr = np.array(mask_image)
-    binary_mask = (mask_arr > 128).astype(np.uint8)
-    print(f'mask image shape {binary_mask.shape}')
-
-    if binary_mask.shape != (total_y, total_x):
-        mask_pil = Image.fromarray(binary_mask * 255)
-        mask_resized = mask_pil.resize((total_x, total_y), Image.NEAREST)
-        binary_mask = (np.array(mask_resized) > 128).astype(np.uint8)
-
-    ttl_rows = [
-        np.repeat(binary_mask[row, :], pixel_samples)
-        for row in range(total_y)
-    ]
-    ttl_wave = np.concatenate(ttl_rows)
-    ttl_wave = ttl_wave * high_voltage
-    ttl_wave = ttl_wave.astype(bool)
-    return ttl_wave
 
 if __name__ == "__main__":
     config = {
