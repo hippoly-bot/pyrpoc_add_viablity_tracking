@@ -585,7 +585,7 @@ class GUI:
 
         if isinstance(selected_image, np.ndarray):
             # scale to 0..255 if needed
-            selected_image = (selected_image * 255).astype(np.uint8)
+            selected_image = (selected_image/(np.max(selected_image)) * 255).astype(np.uint8)
             selected_image = Image.fromarray(selected_image).convert("RGB")
         else:
             selected_image = selected_image.convert("RGB")
