@@ -14,40 +14,44 @@ def start_scan(gui):
         return
 
     rpoc_mask = None
-    ttl_channel = None
+    rpoc_do_chan = None
 
     if gui.rpoc_enabled.get() and gui.apply_mask_var.get():
         if hasattr(gui, 'rpoc_mask') and gui.rpoc_mask is not None:
             rpoc_mask = gui.rpoc_mask
-            ttl_channel = gui.mask_ttl_channel_var.get().strip()
+            rpoc_do_chan = gui.mask_ttl_channel_var.get().strip()
         else:
             messagebox.showerror("Mask Error", "No valid mask loaded.")
             return
 
+    # Mark scanning
     gui.running = True
+    # Disable both 'Acquire' and 'Acq. Continuous'
     gui.continuous_button['state'] = 'disabled'
+    gui.single_button['state'] = 'disabled'
     gui.stop_button['state'] = 'normal'
 
     threading.Thread(
         target=scan,
         args=(gui,),
-        kwargs={'rpoc_mask': rpoc_mask, 'ttl_channel': ttl_channel},
+        kwargs={'rpoc_mask': rpoc_mask, 'rpoc_do_chan': rpoc_do_chan},
         daemon=True
     ).start()
 
 def stop_scan(gui):
     gui.running = False
     gui.acquiring = False
+    # Re-enable both buttons
     gui.continuous_button['state'] = 'normal'
-    gui.stop_button['state'] = 'disabled'
     gui.single_button['state'] = 'normal'
+    gui.stop_button['state'] = 'disabled'
 
-def scan(gui, rpoc_mask=None, ttl_channel=None):
+def scan(gui, rpoc_mask=None, rpoc_do_chan=None):
     try:
         while gui.running:
             gui.update_config()
             channels = [f"{gui.config['device']}/{ch}" for ch in gui.config['ai_chans']]
-            galvo = Galvo(gui.config, rpoc_mask=rpoc_mask, ttl_channel=ttl_channel)
+            galvo = Galvo(gui.config, rpoc_mask=rpoc_mask, rpoc_do_chan=rpoc_do_chan)
 
             if gui.simulation_mode.get():
                 data_list = generate_data(len(channels), config=gui.config)
@@ -55,21 +59,26 @@ def scan(gui, rpoc_mask=None, ttl_channel=None):
                 data_list = raster_scan(channels, galvo)
 
             gui.root.after(0, display_data, gui, data_list)
-
     except Exception as e:
         messagebox.showerror('Error', f'Cannot display data: {e}')
     finally:
         gui.running = False
+        # restore buttons
         gui.continuous_button['state'] = 'normal'
+        gui.single_button['state'] = 'normal'
         gui.stop_button['state'] = 'disabled'
 
 def acquire(gui, startup=False):
+    # If we're already scanning, warn
     if gui.running and not startup:
         messagebox.showwarning('Warning', 'Stop continuous acquisition first.')
         return
 
+    # Mark that we are acquiring
     gui.acquiring = True
     gui.stop_button['state'] = 'normal'
+    gui.continuous_button['state'] = 'disabled'
+    gui.single_button['state'] = 'disabled'
 
     try:
         gui.update_config()
@@ -108,17 +117,19 @@ def acquire(gui, startup=False):
             images = acquire_hyperspectral(gui, numshifts)
             if gui.save_acquisitions.get() and images:
                 save_images(gui, images, filename)
-
     except Exception as e:
         messagebox.showerror('Error', f'Cannot collect/save data: {e}')
     finally:
         gui.acquiring = False
+        gui.continuous_button['state'] = 'normal'
+        gui.single_button['state'] = 'normal'
         gui.stop_button['state'] = 'disabled'
 
 def acquire_multiple(gui, numshifts):
     images = []
     gui.progress_label.config(text=f'(0/{numshifts})')
     gui.root.update_idletasks()
+
     channels = [f"{gui.config['device']}/{ch}" for ch in gui.config['ai_chans']]
     galvo = Galvo(gui.config)
 
@@ -142,10 +153,8 @@ def acquire_multiple(gui, numshifts):
 def acquire_hyperspectral(gui, numshifts):
     start_val = float(gui.entry_start_um.get().strip())
     stop_val = float(gui.entry_stop_um.get().strip())
-    positions = (
-        [start_val] if numshifts == 1 else
-        [start_val + i * (stop_val - start_val) / (numshifts - 1) for i in range(numshifts)]
-    )
+    positions = ([start_val] if numshifts == 1 else
+                 [start_val + i*(stop_val - start_val)/(numshifts-1) for i in range(numshifts)])
 
     try:
         gui.zaber_stage.connect()
@@ -173,7 +182,6 @@ def acquire_hyperspectral(gui, numshifts):
             data_list = generate_data(len(channels), config=gui.config)
         else:
             data_list = raster_scan(channels, galvo)
-
         gui.root.after(0, display_data, gui, data_list)
 
         pil_images = [convert(d) for d in data_list]

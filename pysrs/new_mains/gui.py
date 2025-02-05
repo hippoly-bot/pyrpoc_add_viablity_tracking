@@ -14,13 +14,29 @@ from . import acquisition
 from . import calibration
 from . import display
 import math
-from .utils import Tooltip, generate_data, convert
 from pysrs.instruments.prior_stage.prior_stage_movement_test import send_command, wait_for_z_motion
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FOLDERICON_PATH = BASE_DIR / "data" / "folder_icon.png"
 
 class GUI:
+    """
+    Main GUI for Stimulated Raman system.
+
+    FUNCTION FLOW:
+    1. 'Acq. Continuous' button -> calls acquisition.start_scan(self)
+       - acquisition.start_scan(...) disables 'Acquire' and 'Continuous' in code, runs a loop until 'Stop' is pressed.
+    2. 'Acquire' button -> calls acquisition.acquire(self)
+       - single-scan or multi-scan (e.g. hyperspectral).
+    3. 'Stop' button -> calls acquisition.stop_scan(self)
+       - halts scanning or single acquisition in progress.
+    4. The scanning code calls display.display_data(...) to update the figures.
+
+    Also includes parameter fields:
+    - Device, AO/AI channels, amplitude/offset X/Y, extrasteps_left/extrasteps_right for X dimension only,
+      Zaber port config for the delay stage, etc.
+    """
+
     def __init__(self, root):
         self.root = root
         self.root.title('Stimulated Raman Coordinator')
@@ -28,6 +44,7 @@ class GUI:
         self.bg_color = '#3A3A3A'
         self.root.configure(bg=self.bg_color)
 
+        # General states
         self.simulation_mode = tk.BooleanVar(value=True)
         self.running = False
         self.acquiring = False
@@ -36,22 +53,33 @@ class GUI:
         self.root.protocol('WM_DELETE_WINDOW', self.close)
         self.root.bind("<Button-1>", self.on_global_click, add="+")
 
+        # Default config
         self.config = {
             'device': 'Dev1',
             'ao_chans': ['ao1', 'ao0'],
             'ai_chans': ['ai1'],
             'channel_names': ['ai1'],
             'zaber_chan': 'COM3',
+
+            # Galvo amplitude and offset
             'amp_x': 0.5,
             'amp_y': 0.5,
+            'offset_x': 0.0,
+            'offset_y': 0.0,
+
             'rate': 1e5,
             'numsteps_x': 200,
             'numsteps_y': 200,
-            'numsteps_extra': 50,
+
+            # Instead of old numsteps_extra, separate them
+            'extrasteps_left': 50,
+            'extrasteps_right': 50,
+
             'dwell': 1e-5
         }
         self.param_entries = {}
 
+        # Delay stage config
         self.hyper_config = {
             'start_um': 20000,
             'stop_um': 30000,
@@ -62,11 +90,13 @@ class GUI:
         self.mask_file_path = tk.StringVar(value="No mask loaded")
         self.zaber_stage = ZaberStage(port=self.config['zaber_chan'])
 
+        # For data display
         self.channel_axes = []
         self.slice_x = []
         self.slice_y = []
         self.data = None
 
+        # Layout frames
         self.main_frame = ttk.Frame(self.root)
         self.main_frame.pack(fill="both", expand=True)
 
@@ -82,6 +112,7 @@ class GUI:
         self.paned.add(self.display_area, weight=1)
         self.display_area.rowconfigure(0, weight=1)
         self.display_area.columnconfigure(0, weight=1)
+
         self.auto_colorbar_vars = {}
         self.fixed_colorbar_vars = {}
         self.fixed_colorbar_widgets = {}
@@ -100,6 +131,7 @@ class GUI:
         self.update_sidebar_visibility()
         self.root.after(500, self.update_sidebar_visibility)
 
+        # Attempt a startup "single" acquisition if desired
         threading.Thread(target=acquisition.acquire, args=(self,), kwargs={"startup": True}, daemon=True).start()
 
     def update_sidebar_visibility(self):
@@ -149,6 +181,7 @@ class GUI:
                   foreground=[('readonly', '#AAAAAA'), ('disabled', '#888888')],
                   insertcolor=[('readonly', '#666666'), ('disabled', '#888888')])
 
+        # 1) CONTROL PANEL
         self.cp_pane = CollapsiblePane(self.sidebar, text='Control Panel', gui=self)
         self.cp_pane.pack(fill="x", padx=10, pady=5)
 
@@ -216,6 +249,7 @@ class GUI:
         browse_button = ttk.Button(self.path_frame, text="📂", width=2, command=self.browse_save_path)
         browse_button.grid(row=0, column=1, padx=5)
 
+        # 2) DELAY STAGE
         self.delay_pane = CollapsiblePane(self.sidebar, text='Delay Stage Settings', gui=self)
         self.delay_pane.pack(fill="x", padx=10, pady=5)
 
@@ -268,6 +302,7 @@ class GUI:
         )
         self.movestage_button.grid(row=6, column=1, padx=5, pady=10, sticky='ew')
 
+        # 3) PRIOR STAGE
         self.prior_pane = CollapsiblePane(self.sidebar, text='Prior Stage Settings', gui=self)
         self.prior_pane.pack(fill="x", padx=10, pady=5)
         self.prior_stage_frame = ttk.Frame(self.prior_pane.container, padding=(12, 12))
@@ -287,6 +322,7 @@ class GUI:
         self.prior_move_button = ttk.Button(self.prior_stage_frame, text="Move Z", command=self.move_prior_stage)
         self.prior_move_button.grid(row=2, column=0, columnspan=2, pady=5, sticky="ew")
 
+        # 4) RPOC
         self.rpoc_pane = CollapsiblePane(self.sidebar, text='RPOC Masking', gui=self)
         self.rpoc_pane.pack(fill="x", padx=10, pady=5)
 
@@ -325,26 +361,31 @@ class GUI:
         self.rpoc_channel_entry.bind("<Return>", self.finalize_selection)
         self.rpoc_channel_entry.bind("<FocusOut>", self.finalize_selection)
 
-        ttk.Label(self.rpoc_frame, text='TTL DO Line:').grid(row=4, column=0, padx=5, pady=5, sticky='e')
+        ttk.Label(self.rpoc_frame, text='RPOC DO Line:').grid(row=4, column=0, padx=5, pady=5, sticky='e')
         self.mask_ttl_channel_var = tk.StringVar(value="po4")
         self.mask_ttl_entry = ttk.Entry(self.rpoc_frame, textvariable=self.mask_ttl_channel_var)
         self.mask_ttl_entry.bind("<Return>", lambda event: self.show_feedback(self.mask_ttl_entry))
         self.mask_ttl_entry.bind("<FocusOut>", lambda event: self.show_feedback(self.mask_ttl_entry))
         self.mask_ttl_entry.grid(row=4, column=1, padx=5, pady=5, columnspan=1, sticky='ew')
 
+        # 5) PARAMETER ENTRY
         self.param_pane = CollapsiblePane(self.sidebar, text='Parameters', gui=self)
         self.param_pane.pack(fill="x", padx=10, pady=5)
         self.param_frame = ttk.Frame(self.param_pane.container, padding=(0, 0))
         self.param_frame.grid(row=0, column=0, sticky="ew")
 
-        num_cols = 3
+        # We'll add extrasteps_left, extrasteps_right, offset_x, offset_y
+        # so the user can tweak them in the GUI.
         param_groups = [
             ('Device', 'device'), ('Amp X', 'amp_x'), ('Amp Y', 'amp_y'),
+            ('Offset X', 'offset_x'), ('Offset Y', 'offset_y'),
             ('AO Chans', 'ao_chans'), ('Steps X', 'numsteps_x'), ('Steps Y', 'numsteps_y'),
+            ('Extra Steps Left', 'extrasteps_left'), ('Extra Steps Right', 'extrasteps_right'),
             ('AI Chans', 'ai_chans'), ('Sampling Rate (Hz)', 'rate'), ('Dwell Time (us)', 'dwell'),
-            ('Input Names', 'channel_names'), ('Padding steps', 'numsteps_extra'),
+            ('Input Names', 'channel_names')
         ]
 
+        num_cols = 3
         for index, (label_text, key) in enumerate(param_groups):
             row = (index // num_cols) * 2
             col = index % num_cols
@@ -369,26 +410,26 @@ class GUI:
         info_button_param.pack(side="left", padx=5, pady=(0, 2))
 
         galvo_tooltip_text = (
-            "• Device (enter below): NI-DAQ device identifier (e.g., 'Dev1')\n"
-            "• Delay Chan: channel input for delay stage (e.g., 'COM3')\n"
-            "• AO Chans: analog output channels (e.g., 'ao1,ao0')\n"
-            "• AI Chan: analog input channels (e.g., 'ai1,ai2,ai3') \n"
+            "• Device: NI-DAQ device identifier (e.g., 'Dev1')\n"
+            "• AO Chans: analog outputs (e.g., 'ao1,ao0')\n"
+            "• AI Chans: analog inputs (e.g., 'ai1,ai2')\n"
+            "• Amp X / Amp Y: voltage amplitude for fast/slow scan\n"
+            "• Offset X / Offset Y: offset for wave center in X/Y\n"
+            "• Steps X / Steps Y: # of points\n"
+            "• Extra Steps Left / Right: X padding for turnarounds\n"
             "• Sampling Rate (Hz)\n"
-            "• Amp X / Amp Y: voltage amplitudes for galvo movement\n"
-            "• Steps X / Steps Y\n"
-            "• Padding steps\n"
             "• Dwell Time (us)\n"
-            "No quotes needed for text inputs."
         )
         Tooltip(info_button_param, galvo_tooltip_text)
 
+        # 6) COLORBAR SETTINGS
         self.cb_pane = CollapsiblePane(self.sidebar, text="Colorbar Settings", gui=self)
         self.cb_pane.pack(fill="x", padx=10, pady=5)
         self.cb_frame = ttk.Frame(self.cb_pane.container, padding=(12, 12))
         self.cb_frame.grid(row=0, column=0, sticky="ew")
-
         self.create_colorbar_settings()
 
+        # 7) DATA DISPLAY
         display_frame = ttk.LabelFrame(self.display_area, text='Data Display', padding=(10, 10))
         display_frame.grid(row=0, column=0, sticky='nsew', padx=10, pady=10)
         display_frame.rowconfigure(0, weight=1)
@@ -421,15 +462,15 @@ class GUI:
                 raise ValueError
             self.hyper_config['single_um'] = val
         except ValueError:
-            messagebox.showerror("Value Error", "Invalid single delay value entered. Max is 50,000 µm, min is 0 µm.")
+            messagebox.showerror("Value Error", "Invalid single delay value. 0 <= val <= 50000 µm.")
 
     def force_zaber(self):
         move_position = self.hyper_config['single_um']
         try:
             self.zaber_stage.connect()
         except Exception as e:
-            messagebox.showerror("Connection Error", f'Could not connect to Zaber stage. '
-                                                    f'Ensure ASCII protocol in Zaber console: {e}')
+            messagebox.showerror("Connection Error", f'Could not connect to Zaber stage. {e}')
+            return
         try:
             self.zaber_stage.move_absolute_um(move_position)
             print(f"[INFO] Stage moved to {move_position} µm successfully.")
@@ -457,15 +498,15 @@ class GUI:
 
     def create_mask(self):
         if self.data is None or len(np.shape(self.data)) != 3:
-            messagebox.showerror("Data Error", "No valid data available. Try acquiring an image first.")
+            messagebox.showerror("Data Error", "No valid data available. Acquire an image first.")
             return
         selected_channel = self.rpoc_channel_var.get()
         if selected_channel not in self.config["channel_names"]:
-            messagebox.showerror("Selection Error", "Please select a valid input channel.")
+            messagebox.showerror("Selection Error", "Select a valid input channel.")
             return
         channel_index = self.config["channel_names"].index(selected_channel)
         if channel_index >= np.shape(self.data)[0]:
-            messagebox.showerror("Data Mismatch", f"No data occupies channel {selected_channel}.")
+            messagebox.showerror("Data Mismatch", f"No data at channel {selected_channel}.")
             return
         selected_image = self.data[channel_index]
         mask_window = tk.Toplevel(self.root)
@@ -504,6 +545,7 @@ class GUI:
 
     def update_config(self):
         for key, entry in self.param_entries.items():
+            old_val = self.config[key]
             value = entry.get().strip()
             try:
                 if key in ['ao_chans', 'ai_chans', 'channel_names']:
@@ -514,35 +556,44 @@ class GUI:
                         self.update_rpoc_options()
                         self.create_colorbar_settings()
                 elif key == 'zaber_chan':
+                    # Attempt to connect
                     if value != self.config['zaber_chan']:
-                        if self.zaber_stage.is_connected():
-                            self.zaber_stage.disconnect()
-                            print(f"[INFO] Disconnected from previous Zaber stage at {self.config['zaber_chan']}.")
                         self.config[key] = value
                         try:
+                            if self.zaber_stage.is_connected():
+                                self.zaber_stage.disconnect()
                             self.zaber_stage.port = value
                             self.zaber_stage.connect()
-                            print(f"[INFO] Successfully connected to Zaber stage at {value}.")
+                            self.show_feedback(entry)
                         except Exception as e:
-                            messagebox.showerror('Connection Error',
-                                                 f'Could not connect to Zaber stage on port {value}.\n'
-                                                 f'Ensure ASCII protocol in Zaber console.\n\nError: {e}')
-                            return
-                        self.show_feedback(entry)
+                            messagebox.showerror('Connection Error', f'Could not connect to Zaber stage on port {value}.\n\n{e}')
+                            # revert if fail
+                            self.config[key] = old_val
+                            entry.delete(0, tk.END)
+                            entry.insert(0, old_val)
                 elif key == 'device':
                     if value != self.config[key]:
                         self.config[key] = value
                         self.show_feedback(entry)
-                elif key in ['amp_x', 'amp_y', 'rate', 'dwell']:
-                    if float(value) != self.config[key]:
-                        self.config[key] = float(value)
+                elif key in ['amp_x', 'amp_y', 'offset_x', 'offset_y', 'rate', 'dwell']:
+                    float_val = float(value)
+                    if float_val != self.config[key]:
+                        self.config[key] = float_val
+                        self.show_feedback(entry)
+                elif key in ['numsteps_x', 'numsteps_y', 'extrasteps_left', 'extrasteps_right']:
+                    int_val = int(value)
+                    if int_val != self.config[key]:
+                        self.config[key] = int_val
                         self.show_feedback(entry)
                 else:
+                    # fallback
                     if int(value) != self.config[key]:
                         self.config[key] = int(value)
                         self.show_feedback(entry)
             except ValueError:
-                messagebox.showerror('Error', f'Invalid value for {key}.')
+                messagebox.showerror('Error', f'Invalid value for {key}. Reverting.')
+                entry.delete(0, tk.END)
+                entry.insert(0, str(old_val))
                 return
         self.update_rpoc_options()
         self.toggle_hyperspectral_fields()
@@ -621,10 +672,11 @@ class GUI:
                 del self.fixed_colorbar_widgets[ch]
 
         temp = self.config.get('channel_names', [])
-        for i, val in enumerate(self.config['ai_chans']):
+        ai_list = self.config['ai_chans']
+        for i, val in enumerate(ai_list):
             if len(temp) <= i:
                 temp.append(val)
-        for i, ch in enumerate(self.config['ai_chans']):
+        for i, ch in enumerate(ai_list):
             channel_name = temp[i] if i < len(temp) else ch
             if ch not in self.fixed_colorbar_widgets:
                 row_frame = ttk.Frame(self.cb_frame)
