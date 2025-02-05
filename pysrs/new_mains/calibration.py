@@ -4,7 +4,7 @@ import time, threading
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from .galvo_funcs import Galvo
-from .run_image_2d import lockin_scan
+from .run_image_2d import raster_scan  # was lockin_scan before
 from .utils import generate_data
 
 def calibrate_stage(gui):
@@ -65,8 +65,12 @@ def calibrate_stage(gui):
             cal_running[0] = False
             return
 
-        positions_to_scan = ([start_val] if n_steps == 1 else
-                             [start_val + i * (stop_val - start_val) / (n_steps - 1) for i in range(n_steps)])
+        positions_to_scan = ([start_val]
+            if n_steps == 1 else
+            [start_val + i * (stop_val - start_val) / (n_steps - 1)
+             for i in range(n_steps)]
+        )
+
         positions, intensities = [], []
 
         for pos in positions_to_scan:
@@ -78,16 +82,23 @@ def calibrate_stage(gui):
                 messagebox.showerror("Zaber Error", str(e))
                 cal_running[0] = False
                 break
+
+            # Acquire data (simulation or real)
             if gui.simulation_mode.get():
                 data_list = generate_data(len(gui.config['ai_chans']), config=gui.config)
                 data = data_list[0]
             else:
                 galvo = Galvo(gui.config)
-                data_list = lockin_scan([f"{gui.config['device']}/{ch}" for ch in gui.config['ai_chans']], galvo)
+                data_list = raster_scan(
+                    [f"{gui.config['device']}/{ch}" for ch in gui.config['ai_chans']], 
+                    galvo
+                )
                 data = data_list[0]
+
             avg_val = data.mean()
             positions.append(pos)
             intensities.append(avg_val)
+
             ax.clear()
             ax.set_title('Calibration Data')
             ax.set_xlabel('Stage Position (µm)')
@@ -95,7 +106,9 @@ def calibrate_stage(gui):
             ax.plot(positions, intensities, '-o', color='blue')
             canvas.draw()
             canvas.flush_events()
+
             time.sleep(0.2)
+
         cal_running[0] = False
 
     def start_cal():
@@ -104,6 +117,8 @@ def calibrate_stage(gui):
 
     start_button.configure(command=start_cal)
 
-    stop_button = ttk.Button(config_frame, text='Stop Calibration',
-                             command=lambda: cal_running.__setitem__(0, False))
+    stop_button = ttk.Button(
+        config_frame, text='Stop Calibration',
+        command=lambda: cal_running.__setitem__(0, False)
+    )
     stop_button.grid(row=4, column=0, columnspan=2, padx=5, pady=5)
