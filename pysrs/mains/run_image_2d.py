@@ -94,8 +94,12 @@ def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
             samps_per_chan=galvo.total_samples
         )
 
+        if isinstance(mask, Image.Image):
+            mask = np.array(mask)
+        if not isinstance(mask, np.ndarray):
+            raise TypeError('Mask must be a numpy array.')
         padded_mask = []
-        print(f'liune 98 of run image 2d')
+
         for row_idx in range(galvo.numsteps_y):
             row_data = mask[row_idx, :] 
             print(f'line 101')
