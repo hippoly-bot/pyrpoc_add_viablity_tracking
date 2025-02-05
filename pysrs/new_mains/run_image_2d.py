@@ -68,7 +68,14 @@ def raster_scan(ai_channels, galvo):
             results.append(cropped)
         return results
 
-def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line5", ttl_do_chan_user2="port0/line7"):
+def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line4", ttl_do_chan_user2="port0/line5"): 
+    # user1 is on port0/line5, goes to 405 nm AOM, normally on (because 0th order goes to the rest of the setup?)
+    # user2 port0/line4, goes to the comparator circuit 
+    # AVAILABLE LINES:
+        # name = Dev1/port0/line0 --> Dev1/port0/line31
+        # name = Dev1/port1/line0 --> 7
+        # name = Dev1/port2/line0 --> 7
+
     if isinstance(ai_channels, str):
         ai_channels = [ai_channels]
 
@@ -95,10 +102,14 @@ def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line5", ttl_do_cha
         )
 
         ttl_signal_user1 = np.zeros(galvo.total_samples, dtype=bool)
-        ttl_signal_user1[:galvo.total_samples // 2] = True
-
         ttl_signal_user2 = np.zeros(galvo.total_samples, dtype=bool)
-        ttl_signal_user2[:galvo.total_samples // 2] = True
+        for i in range(len(ttl_signal_user1)):
+            if (int(i/5))%2 == 0:
+                ttl_signal_user1[i] = True
+                ttl_signal_user2[i]= True
+            else:
+                ttl_signal_user1[i] = False
+                ttl_signal_user2[i] = False
 
         ttl_signals = np.array([ttl_signal_user1, ttl_signal_user2])
 
@@ -168,13 +179,13 @@ def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line5", ttl_do_cha
 
 if __name__ == "__main__":
     config = {
-        "numsteps_x": 200,
-        "numsteps_y": 200,
+        "numsteps_x": 400,
+        "numsteps_y": 400,
         "extrasteps_left": 50,
         "extrasteps_right": 50,
         "offset_x": 0.0,
         "offset_y": 0.0,
-        "dwell": 10e-6,
+        "dwell": 5e-5,
         "amp_x": 0.5,
         "amp_y": 0.5,
         "rate": 100000,
@@ -186,3 +197,18 @@ if __name__ == "__main__":
     acquired_data = digital_test(['Dev1/ai0'], galvo)
 
     print("Scan complete. Data shape:", acquired_data[0].shape)
+
+    # system = nidaqmx.system.System.local()
+    # do_channels = []
+
+    # for dev in system.devices:
+    #     if dev.name == 'Dev1':
+    #         do_channels = dev.do_lines
+    #         break
+
+    # if do_channels:
+    #     for ch in do_channels:
+    #         print(ch)
+    # else:
+    #     print('epic fail')
+    
