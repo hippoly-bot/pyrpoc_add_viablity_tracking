@@ -3,6 +3,7 @@ from nidaqmx.constants import AcquisitionType
 import numpy as np
 from pysrs.mains.galvo_funcs import Galvo
 import matplotlib.pyplot as plt
+from PIL import Image, ImageTk, ImageDraw, ImageOps
 
 def raster_scan(ai_channels, galvo):
     if isinstance(ai_channels, str):
@@ -151,15 +152,35 @@ def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
 
     return results
 
+@staticmethod
+def build_rpoc_wave(mask_image, pixel_samples, total_x, total_y, high_voltage=5.0):
+    mask_arr = np.array(mask_image)
+    binary_mask = (mask_arr > 128).astype(np.uint8)
+    print(f'mask image shape {binary_mask.shape}')
+
+    if binary_mask.shape != (total_y, total_x):
+        mask_pil = Image.fromarray(binary_mask * 255)
+        mask_resized = mask_pil.resize((total_x, total_y), Image.NEAREST)
+        binary_mask = (np.array(mask_resized) > 128).astype(np.uint8)
+
+    ttl_rows = [
+        np.repeat(binary_mask[row, :], pixel_samples)
+        for row in range(total_y)
+    ]
+    ttl_wave = np.concatenate(ttl_rows)
+    ttl_wave = ttl_wave * high_voltage
+    ttl_wave = ttl_wave.astype(bool)
+    return ttl_wave
+
 if __name__ == "__main__":
     config = {
         "numsteps_x": 200,
         "numsteps_y": 200,
-        "extrasteps_left": 50,
-        "extrasteps_right": 50,
+        "extrasteps_left": 0,
+        "extrasteps_right": 0,
         "offset_x": 0.0,
         "offset_y": 0.0,
-        "dwell": 10e-6,
+        "dwell": 5e-5,
         "amp_x": 0.5,
         "amp_y": 0.5,
         "rate": 100000,
@@ -171,3 +192,18 @@ if __name__ == "__main__":
     acquired_data = raster_scan_rpoc(['Dev1/ai0'], galvo)
 
     print("Scan complete. Data shape:", acquired_data[0].shape)
+
+    # system = nidaqmx.system.System.local()
+    # do_channels = []
+
+    # for dev in system.devices:
+    #     if dev.name == 'Dev1':
+    #         do_channels = dev.do_lines
+    #         break
+
+    # if do_channels:
+    #     for ch in do_channels:
+    #         print(ch)
+    # else:
+    #     print('epic fail')
+    
