@@ -68,14 +68,13 @@ def raster_scan(ai_channels, galvo):
             results.append(cropped)
         return results
 
-def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line5", ttl_do_chan_user2="port0/line7"):
+def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
     if isinstance(ai_channels, str):
         ai_channels = [ai_channels]
 
     with nidaqmx.Task() as ao_task, nidaqmx.Task() as ai_task, nidaqmx.Task() as do_task:
         ao_channels = list(galvo.ao_chans)
-        composite_wave = galvo.waveform.copy()
-
+        composite_wave = galvo.waveform.copy()  
         for chan in ao_channels:
             ao_task.ao_channels.add_ao_voltage_chan(f'{galvo.device}/{chan}')
         ao_task.timing.cfg_samp_clk_timing(
@@ -84,9 +83,9 @@ def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line5", ttl_do_cha
             samps_per_chan=composite_wave.shape[1]
         )
 
+
         for ch in ai_channels:
             ai_task.ai_channels.add_ai_voltage_chan(ch)
-
         ai_task.timing.cfg_samp_clk_timing(
             rate=galvo.rate,
             source=f'/{galvo.device}/ao/SampleClock',
@@ -94,26 +93,21 @@ def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line5", ttl_do_cha
             samps_per_chan=galvo.total_samples
         )
 
-        ttl_signal_user1 = np.zeros(galvo.total_samples, dtype=bool)
-        ttl_signal_user1[:galvo.total_samples // 2] = True
+        padded_mask = []
+        for row_idx in range(galvo.numsteps_y):
+            row_data = mask[row_idx, :] 
+            padded_row = np.concatenate((
+                np.zeros(galvo.extrasteps_left, dtype=bool),
+                row_data,
+                np.zeros(galvo.extrasteps_right, dtype=bool)
+            ))
+            padded_mask.append(padded_row)
+        padded_mask = np.array(padded_mask, dtype=bool)  
 
-        ttl_signal_user2 = np.zeros(galvo.total_samples, dtype=bool)
-        ttl_signal_user2[:galvo.total_samples // 2] = True
+        flattened = padded_mask.ravel() 
+        ttl_signal = np.repeat(flattened, galvo.pixel_samples).astype(bool)
 
-        ttl_signals = np.array([ttl_signal_user1, ttl_signal_user2])
-
-        plt.figure(figsize=(10, 4))
-        plt.plot(ttl_signal_user1, label="TTL Signal USER1", linestyle="--")
-        plt.plot(ttl_signal_user2, label="TTL Signal USER2", linestyle=":")
-        plt.xlabel("Sample Index")
-        plt.ylabel("TTL Signal (0 or 1)")
-        plt.title("TTL Signals for USER1 and USER2")
-        plt.legend()
-        plt.show()
-
-        do_task.do_channels.add_do_chan(f"{galvo.device}/{ttl_do_chan_user1}")
-        do_task.do_channels.add_do_chan(f"{galvo.device}/{ttl_do_chan_user2}")
-
+        do_task.do_channels.add_do_chan(f"{galvo.device}/{do_chan}")
         do_task.timing.cfg_samp_clk_timing(
             rate=galvo.rate,
             source=f'/{galvo.device}/ao/SampleClock',
@@ -122,17 +116,15 @@ def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line5", ttl_do_cha
         )
 
         ao_task.write(composite_wave, auto_start=False)
-        do_task.write(ttl_signals.tolist(), auto_start=False)
+        do_task.write(ttl_signal.tolist(), auto_start=False)
 
         ai_task.start()
         do_task.start()
         ao_task.start()
 
-        print("Tasks Started Successfully.")
-
-        do_task.wait_until_done(timeout=(2 * galvo.total_samples / galvo.rate + 10))
-        ao_task.wait_until_done(timeout=(2 * galvo.total_samples / galvo.rate + 10))
-        ai_task.wait_until_done(timeout=(2 * galvo.total_samples / galvo.rate + 10))
+        ao_task.wait_until_done(timeout=galvo.total_samples / galvo.rate + 5)
+        do_task.wait_until_done(timeout=galvo.total_samples / galvo.rate + 5)
+        ai_task.wait_until_done(timeout=galvo.total_samples / galvo.rate + 5)
 
         acq_data = np.array(ai_task.read(number_of_samples_per_channel=galvo.total_samples))
 
@@ -142,10 +134,12 @@ def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line5", ttl_do_cha
     if n_ch == 1:
         acq_data = acq_data.reshape(galvo.total_y, galvo.total_x, galvo.pixel_samples)
         data2d = np.mean(acq_data, axis=2)
+        # Crop out extrasteps_left and extrasteps_right:
         x1 = galvo.extrasteps_left
         x2 = galvo.extrasteps_left + galvo.numsteps_x
         cropped = data2d[:, x1:x2]
-        results.append(cropped)
+        results = [cropped]
+
     else:
         for i in range(n_ch):
             chan_data = acq_data[i].reshape(galvo.total_y, galvo.total_x, galvo.pixel_samples)
@@ -154,15 +148,6 @@ def digital_test(ai_channels, galvo, ttl_do_chan_user1="port0/line5", ttl_do_cha
             x2 = galvo.extrasteps_left + galvo.numsteps_x
             cropped = data2d[:, x1:x2]
             results.append(cropped)
-
-    if len(results) > 0:
-        plt.figure(figsize=(8, 6))
-        plt.imshow(results[0], cmap='gray', aspect='auto')
-        plt.colorbar()
-        plt.title("Acquired Scan Data")
-        plt.xlabel("X-axis")
-        plt.ylabel("Y-axis")
-        plt.show()
 
     return results
 
@@ -183,6 +168,6 @@ if __name__ == "__main__":
     }
 
     galvo = Galvo(config)
-    acquired_data = digital_test(['Dev1/ai0'], galvo)
+    acquired_data = raster_scan_rpoc(['Dev1/ai0'], galvo)
 
     print("Scan complete. Data shape:", acquired_data[0].shape)
