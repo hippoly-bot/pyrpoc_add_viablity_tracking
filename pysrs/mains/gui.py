@@ -6,14 +6,13 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import threading, os
 from pathlib import Path
 from PIL import Image
-from pysrs.new_mains.zaber import ZaberStage
-from pysrs.new_mains.rpoc2 import RPOC
-# Use the updated widgets with old-style aesthetics:
-from pysrs.new_mains.widgets import CollapsiblePane, ScrollableFrame
-from pysrs.new_mains.utils import Tooltip, generate_data, convert
-from pysrs.new_mains import acquisition
-from pysrs.new_mains import calibration
-from pysrs.new_mains import display
+from pysrs.mains.zaber import ZaberStage
+from pysrs.mains.rpoc2 import RPOC
+from pysrs.mains.widgets import CollapsiblePane, ScrollableFrame
+from pysrs.mains.utils import Tooltip, generate_data, convert
+from pysrs.mains import acquisition
+from pysrs.mains import calibration
+from pysrs.mains import display
 import math
 from pysrs.instruments.prior_stage.prior_stage_movement_test import send_command, wait_for_z_motion
 
@@ -21,9 +20,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 FOLDERICON_PATH = BASE_DIR / "data" / "folder_icon.png"
 
 class GUI:
-    """
-    Main GUI for Stimulated Raman system, with the OLD aesthetics re-implemented.
-    """
     def __init__(self, root):
         self.root = root
         self.root.title('Stimulated Raman Coordinator')
@@ -586,6 +582,14 @@ class GUI:
         selected_image = self.data[channel_index]
         mask_window = tk.Toplevel(self.root)
         mask_window.title(f'RPOC Mask Editor - {selected_channel}')
+
+        if isinstance(selected_image, np.ndarray):
+            # scale to 0..255 if needed
+            selected_image = (selected_image/(np.max(selected_image)) * 255).astype(np.uint8)
+            selected_image = Image.fromarray(selected_image).convert("RGB")
+        else:
+            selected_image = selected_image.convert("RGB")
+
         RPOC(mask_window, image=selected_image)
 
     def update_rpoc_options(self):

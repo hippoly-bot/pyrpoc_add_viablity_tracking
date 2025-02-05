@@ -3,10 +3,10 @@ import os
 from tkinter import messagebox
 import numpy as np
 from PIL import Image
-from pysrs.new_mains.utils import generate_data, convert
-from pysrs.new_mains.display import display_data
-from pysrs.new_mains.galvo_funcs import Galvo
-from pysrs.new_mains.run_image_2d import raster_scan
+from pysrs.mains.utils import generate_data, convert
+from pysrs.mains.display import display_data
+from pysrs.mains.galvo_funcs import Galvo
+from pysrs.mains.run_image_2d import raster_scan
 
 def start_scan(gui):
     if gui.running:
