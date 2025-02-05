@@ -23,18 +23,11 @@ class GUI:
     """
     Main GUI for Stimulated Raman system.
 
-    FUNCTION FLOW:
-    1. 'Acq. Continuous' button -> calls acquisition.start_scan(self)
-       - acquisition.start_scan(...) disables 'Acquire' and 'Continuous' in code, runs a loop until 'Stop' is pressed.
-    2. 'Acquire' button -> calls acquisition.acquire(self)
-       - single-scan or multi-scan (e.g. hyperspectral).
-    3. 'Stop' button -> calls acquisition.stop_scan(self)
-       - halts scanning or single acquisition in progress.
-    4. The scanning code calls display.display_data(...) to update the figures.
-
-    Also includes parameter fields:
-    - Device, AO/AI channels, amplitude/offset X/Y, extrasteps_left/extrasteps_right for X dimension only,
-      Zaber port config for the delay stage, etc.
+    Summary of Button Flow:
+      - 'Acq. Continuous' -> acquisition.start_scan(self)
+      - 'Acquire' -> acquisition.acquire(self)
+      - 'Stop' -> acquisition.stop_scan(self)
+    The 'Acq. Continuous' and 'Acquire' buttons are disabled during scanning so only 'Stop' is clickable.
     """
 
     def __init__(self, root):
@@ -44,7 +37,6 @@ class GUI:
         self.bg_color = '#3A3A3A'
         self.root.configure(bg=self.bg_color)
 
-        # General states
         self.simulation_mode = tk.BooleanVar(value=True)
         self.running = False
         self.acquiring = False
@@ -53,7 +45,7 @@ class GUI:
         self.root.protocol('WM_DELETE_WINDOW', self.close)
         self.root.bind("<Button-1>", self.on_global_click, add="+")
 
-        # Default config
+        # config dictionary with new offsets, extrasteps_left, extrasteps_right
         self.config = {
             'device': 'Dev1',
             'ao_chans': ['ao1', 'ao0'],
@@ -61,20 +53,15 @@ class GUI:
             'channel_names': ['ai1'],
             'zaber_chan': 'COM3',
 
-            # Galvo amplitude and offset
             'amp_x': 0.5,
             'amp_y': 0.5,
             'offset_x': 0.0,
             'offset_y': 0.0,
-
             'rate': 1e5,
             'numsteps_x': 200,
             'numsteps_y': 200,
-
-            # Instead of old numsteps_extra, separate them
             'extrasteps_left': 50,
             'extrasteps_right': 50,
-
             'dwell': 1e-5
         }
         self.param_entries = {}
@@ -90,13 +77,11 @@ class GUI:
         self.mask_file_path = tk.StringVar(value="No mask loaded")
         self.zaber_stage = ZaberStage(port=self.config['zaber_chan'])
 
-        # For data display
         self.channel_axes = []
         self.slice_x = []
         self.slice_y = []
         self.data = None
 
-        # Layout frames
         self.main_frame = ttk.Frame(self.root)
         self.main_frame.pack(fill="both", expand=True)
 
@@ -131,7 +116,7 @@ class GUI:
         self.update_sidebar_visibility()
         self.root.after(500, self.update_sidebar_visibility)
 
-        # Attempt a startup "single" acquisition if desired
+        # Startup single acquisition in a separate thread
         threading.Thread(target=acquisition.acquire, args=(self,), kwargs={"startup": True}, daemon=True).start()
 
     def update_sidebar_visibility(self):
@@ -264,6 +249,10 @@ class GUI:
         self.zaber_port_entry.insert(0, self.config['zaber_chan'])
         self.zaber_port_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
 
+        # Bind focus-out to show feedback on success
+        self.zaber_port_entry.bind("<FocusOut>", self._on_zaber_port_changed)
+        self.zaber_port_entry.bind("<Return>", self._on_zaber_port_changed)
+
         self.delay_hyperspec_checkbutton = ttk.Checkbutton(
             self.delay_stage_frame, text='Enable Hyperspectral Scanning',
             variable=self.hyperspectral_enabled, command=self.toggle_hyperspectral_fields
@@ -314,6 +303,10 @@ class GUI:
         self.prior_port_entry = ttk.Entry(self.prior_stage_frame, width=10)
         self.prior_port_entry.insert(0, "4")
         self.prior_port_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
+
+        # Show feedback if changed
+        self.prior_port_entry.bind("<FocusOut>", self._on_prior_port_changed)
+        self.prior_port_entry.bind("<Return>", self._on_prior_port_changed)
 
         ttk.Label(self.prior_stage_frame, text="Set Z Height (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="w")
         self.prior_z_entry = ttk.Entry(self.prior_stage_frame, width=10)
@@ -374,8 +367,6 @@ class GUI:
         self.param_frame = ttk.Frame(self.param_pane.container, padding=(0, 0))
         self.param_frame.grid(row=0, column=0, sticky="ew")
 
-        # We'll add extrasteps_left, extrasteps_right, offset_x, offset_y
-        # so the user can tweak them in the GUI.
         param_groups = [
             ('Device', 'device'), ('Amp X', 'amp_x'), ('Amp Y', 'amp_y'),
             ('Offset X', 'offset_x'), ('Offset Y', 'offset_y'),
@@ -384,7 +375,6 @@ class GUI:
             ('AI Chans', 'ai_chans'), ('Sampling Rate (Hz)', 'rate'), ('Dwell Time (us)', 'dwell'),
             ('Input Names', 'channel_names')
         ]
-
         num_cols = 3
         for index, (label_text, key) in enumerate(param_groups):
             row = (index // num_cols) * 2
@@ -410,15 +400,14 @@ class GUI:
         info_button_param.pack(side="left", padx=5, pady=(0, 2))
 
         galvo_tooltip_text = (
-            "• Device: NI-DAQ device identifier (e.g., 'Dev1')\n"
+            "• Device: NI-DAQ device (e.g., 'Dev1')\n"
             "• AO Chans: analog outputs (e.g., 'ao1,ao0')\n"
             "• AI Chans: analog inputs (e.g., 'ai1,ai2')\n"
-            "• Amp X / Amp Y: voltage amplitude for fast/slow scan\n"
-            "• Offset X / Offset Y: offset for wave center in X/Y\n"
-            "• Steps X / Steps Y: # of points\n"
-            "• Extra Steps Left / Right: X padding for turnarounds\n"
-            "• Sampling Rate (Hz)\n"
-            "• Dwell Time (us)\n"
+            "• Amp X/Y + Offset X/Y\n"
+            "• Steps X/Y\n"
+            "• Extra Steps Left/Right (X padding)\n"
+            "• Sampling Rate, Dwell, etc.\n"
+            "• Input Names: labels for display"
         )
         Tooltip(info_button_param, galvo_tooltip_text)
 
@@ -451,27 +440,60 @@ class GUI:
         self.toggle_save_options()
         self.toggle_rpoc_fields()
 
+    def _on_zaber_port_changed(self, event):
+        """Bind for zaber_port_entry so we attempt to parse and connect, then show feedback if ok, else revert."""
+        new_port = self.zaber_port_entry.get().strip()
+        old_port = self.config['zaber_chan']
+        if new_port == old_port:
+            return
+        self.config['zaber_chan'] = new_port
+        try:
+            if self.zaber_stage.is_connected():
+                self.zaber_stage.disconnect()
+            self.zaber_stage.port = new_port
+            self.zaber_stage.connect()
+            self.show_feedback(self.zaber_port_entry)
+        except Exception as e:
+            messagebox.showerror("Zaber Port Error", f"Could not connect to {new_port}. Reverting.")
+            self.config['zaber_chan'] = old_port
+            self.zaber_port_entry.delete(0, tk.END)
+            self.zaber_port_entry.insert(0, old_port)
+
+    def _on_prior_port_changed(self, event):
+        """Just show feedback if parse is ok; doesn't forcibly connect anything, but let's parse the int."""
+        val = self.prior_port_entry.get().strip()
+        old_val = "4"  # or we can store a prior_value if you want to revert
+        try:
+            test = int(val)
+            if test < 0 or test > 9999:
+                raise ValueError
+            self.show_feedback(self.prior_port_entry)
+        except ValueError:
+            messagebox.showerror("Value Error", f"Invalid Prior port {val}. Reverting.")
+            self.prior_port_entry.delete(0, tk.END)
+            self.prior_port_entry.insert(0, old_val)
+
     def on_global_click(self, event):
         if not isinstance(event.widget, tk.Entry):
             self.root.focus_set()
 
     def single_delay_changed(self, event=None):
+        old_val = self.hyper_config['single_um']
         try:
             val = float(self.entry_single_um.get().strip())
             if val < 0 or val > 50000:
                 raise ValueError
             self.hyper_config['single_um'] = val
+            self.show_feedback(self.entry_single_um)
         except ValueError:
-            messagebox.showerror("Value Error", "Invalid single delay value. 0 <= val <= 50000 µm.")
+            messagebox.showerror("Value Error", "Invalid single delay. Reverting.")
+            self.entry_single_um.delete(0, tk.END)
+            self.entry_single_um.insert(0, str(old_val))
 
     def force_zaber(self):
         move_position = self.hyper_config['single_um']
         try:
             self.zaber_stage.connect()
-        except Exception as e:
-            messagebox.showerror("Connection Error", f'Could not connect to Zaber stage. {e}')
-            return
-        try:
             self.zaber_stage.move_absolute_um(move_position)
             print(f"[INFO] Stage moved to {move_position} µm successfully.")
         except Exception as e:
@@ -544,6 +566,7 @@ class GUI:
             self.rpoc_mask = None
 
     def update_config(self):
+        # For the parameter entries in param pane only
         for key, entry in self.param_entries.items():
             old_val = self.config[key]
             value = entry.get().strip()
@@ -555,22 +578,6 @@ class GUI:
                         self.show_feedback(entry)
                         self.update_rpoc_options()
                         self.create_colorbar_settings()
-                elif key == 'zaber_chan':
-                    # Attempt to connect
-                    if value != self.config['zaber_chan']:
-                        self.config[key] = value
-                        try:
-                            if self.zaber_stage.is_connected():
-                                self.zaber_stage.disconnect()
-                            self.zaber_stage.port = value
-                            self.zaber_stage.connect()
-                            self.show_feedback(entry)
-                        except Exception as e:
-                            messagebox.showerror('Connection Error', f'Could not connect to Zaber stage on port {value}.\n\n{e}')
-                            # revert if fail
-                            self.config[key] = old_val
-                            entry.delete(0, tk.END)
-                            entry.insert(0, old_val)
                 elif key == 'device':
                     if value != self.config[key]:
                         self.config[key] = value
@@ -595,6 +602,7 @@ class GUI:
                 entry.delete(0, tk.END)
                 entry.insert(0, str(old_val))
                 return
+
         self.update_rpoc_options()
         self.toggle_hyperspectral_fields()
         self.toggle_save_options()
@@ -653,52 +661,82 @@ class GUI:
     def toggle_rpoc_fields(self):
         self.update_rpoc_options()
 
-    def update_colorbar_entry_state(self, ch):
-        widget = self.fixed_colorbar_widgets.get(ch)
-        if widget:
-            if self.auto_colorbar_vars[ch].get():
-                widget.configure(state='disabled')
-            else:
-                widget.configure(state='normal')
-
     def create_colorbar_settings(self):
-        existing_widgets = {ch: widget for ch, widget in self.fixed_colorbar_widgets.items()}
-        for ch in list(existing_widgets.keys()):
-            if ch not in self.config['ai_chans']:
-                widget_frame = existing_widgets[ch].master
-                widget_frame.destroy()
-                del self.auto_colorbar_vars[ch]
-                del self.fixed_colorbar_vars[ch]
-                del self.fixed_colorbar_widgets[ch]
+        """
+        Build colorbar settings keyed by the user-facing 'channel_name'
+        rather than the raw AI channels, so that color scaling is possible
+        even if the user picks unique display names.
+        """
+        # Clear out old
+        existing_widgets = dict(self.fixed_colorbar_widgets)
 
-        temp = self.config.get('channel_names', [])
+        # We rely on self.config['channel_names'] primarily
         ai_list = self.config['ai_chans']
-        for i, val in enumerate(ai_list):
-            if len(temp) <= i:
-                temp.append(val)
-        for i, ch in enumerate(ai_list):
-            channel_name = temp[i] if i < len(temp) else ch
-            if ch not in self.fixed_colorbar_widgets:
-                row_frame = ttk.Frame(self.cb_frame)
-                row_frame.pack(fill='x', pady=2)
-                lbl = ttk.Label(row_frame, text=channel_name, width=10)
-                lbl.pack(side='left')
-                auto_var = tk.BooleanVar(value=True)
-                self.auto_colorbar_vars[ch] = auto_var
-                auto_cb = ttk.Checkbutton(
-                    row_frame,
-                    text='Auto Scale',
-                    variable=auto_var,
-                    command=lambda ch=ch: self.update_colorbar_entry_state(ch)
-                )
-                auto_cb.pack(side='left', padx=5)
-                fixed_var = tk.StringVar(value="")
-                self.fixed_colorbar_vars[ch] = fixed_var
-                fixed_entry = ttk.Entry(row_frame, textvariable=fixed_var, width=8)
-                fixed_entry.pack(side="left", padx=5)
-                self.fixed_colorbar_widgets[ch] = fixed_entry
-                fixed_entry.configure(state='disabled')
+        names_list = self.config['channel_names']
+        n_ch = max(len(ai_list), len(names_list))
+
+        # remove any old
+        for oldkey in list(existing_widgets.keys()):
+            # oldkey is the display name from a prior iteration
+            if oldkey not in names_list:
+                parent_frame = self.fixed_colorbar_widgets[oldkey].master
+                parent_frame.destroy()
+                del self.auto_colorbar_vars[oldkey]
+                del self.fixed_colorbar_vars[oldkey]
+                del self.fixed_colorbar_widgets[oldkey]
+
+        # build new
+        for i in range(n_ch):
+            # The label that the user sees:
+            if i < len(names_list):
+                label = names_list[i]
+            else:
+                label = ai_list[i] if i < len(ai_list) else f"chan{i}"
+
+            if label in self.fixed_colorbar_widgets:
+                continue
+
+            row_frame = ttk.Frame(self.cb_frame)
+            row_frame.pack(fill='x', pady=2)
+
+            lbl = ttk.Label(row_frame, text=label, width=10)
+            lbl.pack(side='left')
+
+            auto_var = tk.BooleanVar(value=True)
+            self.auto_colorbar_vars[label] = auto_var
+
+            def command_wrapper(this_label=label):
+                self.update_colorbar_entry_state(this_label)
+
+            auto_cb = ttk.Checkbutton(
+                row_frame,
+                text='Auto Scale',
+                variable=auto_var,
+                command=command_wrapper
+            )
+            auto_cb.pack(side='left', padx=5)
+
+            fixed_var = tk.StringVar(value="")
+            self.fixed_colorbar_vars[label] = fixed_var
+            fixed_entry = ttk.Entry(row_frame, textvariable=fixed_var, width=8)
+            fixed_entry.pack(side="left", padx=5)
+            self.fixed_colorbar_widgets[label] = fixed_entry
+            fixed_entry.configure(state='disabled')
+
         self.cb_frame.update_idletasks()
+
+    def update_colorbar_entry_state(self, display_name):
+        """
+        Enable/disable the fixed colorbar entry based on the 'auto scale' checkbox
+        for the user-facing channel name.
+        """
+        widget = self.fixed_colorbar_widgets.get(display_name)
+        if not widget:
+            return
+        if self.auto_colorbar_vars[display_name].get():
+            widget.configure(state='disabled')
+        else:
+            widget.configure(state='normal')
 
     def close(self):
         self.running = False

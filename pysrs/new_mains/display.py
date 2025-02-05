@@ -2,11 +2,49 @@ import numpy as np
 import math
 import tkinter as tk
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from . import gui
 
 def create_axes(gui, n_channels):
-    # unchanged ...
-    ...
+    gui.fig.clf()
+    gui.fig.patch.set_facecolor('#1E1E1E')
+    gui.channel_axes = []
+    gui.slice_x = [None] * n_channels
+    gui.slice_y = [None] * n_channels
+
+    ncols = math.ceil(math.sqrt(n_channels))
+    nrows = math.ceil(n_channels / ncols)
+
+    for i in range(n_channels):
+        ax_main = gui.fig.add_subplot(nrows, ncols, i+1)
+        ax_main.set_facecolor('#1E1E1E')
+        for spine in ax_main.spines.values():
+            spine.set_color('white')
+        ax_main.xaxis.label.set_color('white')
+        ax_main.yaxis.label.set_color('white')
+        ax_main.tick_params(axis='both', colors='white', labelsize=8)
+
+        divider = make_axes_locatable(ax_main)
+        ax_hslice = divider.append_axes("bottom", size="10%", pad=0.05, sharex=ax_main)
+        ax_vslice = divider.append_axes("left", size="10%", pad=0.05, sharey=ax_main)
+
+        for ax in [ax_hslice, ax_vslice]:
+            ax.set_facecolor('#1E1E1E')
+            for spine in ax.spines.values():
+                spine.set_color('white')
+            ax.xaxis.label.set_color('white')
+            ax.yaxis.label.set_color('white')
+            ax.tick_params(axis='both', colors='white', labelsize=8)
+
+        ch_dict = {
+            "main": ax_main,
+            "hslice": ax_hslice,
+            "vslice": ax_vslice,
+            "img_handle": None,
+            "colorbar": None,
+            "vline": None,
+            "hline": None,
+        }
+        gui.channel_axes.append(ch_dict)
+    gui.canvas.draw()
 
 def display_data(gui, data_list):
     if len(data_list) == 0:
@@ -23,6 +61,16 @@ def display_data(gui, data_list):
         ch_ax = gui.channel_axes[i]
         ax_main = ch_ax["main"]
         ny, nx = data.shape
+
+        # Determine user-facing label from channel_names
+        if 'channel_names' in gui.config and i < len(gui.config['channel_names']):
+            channel_name = gui.config['channel_names'][i]
+        else:
+            channel_name = gui.config['ai_chans'][i] if i < len(gui.config['ai_chans']) else f"chan{i}"
+
+        ax_main.set_title(channel_name, fontsize=10, color='white')
+
+        # Build extents
         x_extent = np.linspace(
             gui.config['offset_x'] - gui.config['amp_x'],
             gui.config['offset_x'] + gui.config['amp_x'],
@@ -34,24 +82,18 @@ def display_data(gui, data_list):
             ny
         )
 
-        # set title from channel names
-        if 'channel_names' in gui.config and len(gui.config['channel_names']) > i:
-            channel_name = gui.config['channel_names'][i]
-        else:
-            channel_name = gui.config['ai_chans'][i] if i < len(gui.config['ai_chans']) else f"chan{i}"
-        ax_main.set_title(channel_name, fontsize=10, color='white')
-
         if ch_ax["img_handle"] is None:
             im = ax_main.imshow(
                 data,
-                extent=[x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]],  # flip Y
-                origin='upper',  # or 'lower' if you want the first row at bottom
+                extent=[x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]],
+                origin='upper',
                 aspect='equal',
                 cmap='magma'
             )
             ch_ax["img_handle"] = im
             gui.slice_x[i] = nx // 2
             gui.slice_y[i] = ny // 2
+
             ch_ax["vline"] = ax_main.axvline(x=[x_extent[gui.slice_x[i]]], color='red', linestyle='--', lw=2)
             ch_ax["hline"] = ax_main.axhline(y=[y_extent[gui.slice_y[i]]], color='blue', linestyle='--', lw=2)
 
@@ -67,33 +109,35 @@ def display_data(gui, data_list):
             im = ch_ax["img_handle"]
             im.set_data(data)
 
-            # colorbar logic
-            channel_auto_scale_var = gui.auto_colorbar_vars.get(channel_name, tk.BooleanVar(value=True))
-            auto_scale = channel_auto_scale_var.get()
+            # colorbar logic keyed by channel_name
+            auto_scale_var = gui.auto_colorbar_vars.get(channel_name, tk.BooleanVar(value=True))
+            auto_scale = auto_scale_var.get()
             if auto_scale:
                 im.set_clim(vmin=data.min(), vmax=data.max())
             else:
+                # fixed color
+                fixed_strvar = gui.fixed_colorbar_vars.get(channel_name, tk.StringVar(value=""))
                 try:
-                    fixed_max_str = gui.fixed_colorbar_vars.get(channel_name, tk.StringVar(value="")).get()
-                    fixed_max = float(fixed_max_str)
+                    fixed_max = float(fixed_strvar.get())
                     if fixed_max < data.min():
-                        # if user typed a silly value, clamp
+                        # clamp if user typed something too small
                         fixed_max = data.max()
+                    im.set_clim(vmin=data.min(), vmax=fixed_max)
                 except ValueError:
-                    # fallback if user typed something invalid
-                    fixed_max = data.max()
-
-                im.set_clim(vmin=data.min(), vmax=fixed_max)
+                    # fallback
+                    im.set_clim(vmin=data.min(), vmax=data.max())
 
             im.set_extent([x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]])
 
         sx = gui.slice_x[i] if gui.slice_x[i] is not None and gui.slice_x[i] < nx else nx // 2
         sy = gui.slice_y[i] if gui.slice_y[i] is not None and gui.slice_y[i] < ny else ny // 2
+
         if ch_ax["vline"]:
             ch_ax["vline"].set_xdata([x_extent[sx]])
         if ch_ax["hline"]:
             ch_ax["hline"].set_ydata([y_extent[sy]])
 
+        # horizontal slice
         ax_hslice = ch_ax["hslice"]
         ax_hslice.clear()
         ax_hslice.plot(x_extent, data[sy, :], color='blue', linewidth=1)
@@ -101,33 +145,47 @@ def display_data(gui, data_list):
         ax_hslice.tick_params(axis='both', labelsize=8)
         ax_hslice.set_xlim(x_extent[0], x_extent[-1])
 
+        # vertical slice
         ax_vslice = ch_ax["vslice"]
         ax_vslice.clear()
         ax_vslice.plot(data[:, sx], y_extent, color='red', linewidth=1)
         ax_vslice.tick_params(axis='both', labelsize=8)
-        ax_vslice.set_ylim(y_extent[-1], y_extent[0])  # if we want the first row at top
+        ax_vslice.set_ylim(y_extent[-1], y_extent[0])
 
     gui.canvas.draw_idle()
-    
+
 def on_image_click(gui, event):
     if str(gui.toolbar.mode) in ["zoom rect", "pan/zoom"]:
         return
     if not gui.channel_axes:
         return
+
     for i, ch_ax in enumerate(gui.channel_axes):
         if event.inaxes == ch_ax["main"]:
             data = gui.data[i]
             if data.ndim > 2:
                 data = np.squeeze(data)
             ny, nx = data.shape
-            x_extent = np.linspace(-gui.config['amp_x'], gui.config['amp_x'], nx)
-            y_extent = np.linspace(-gui.config['amp_y'], gui.config['amp_y'], ny)
-            gui.slice_x[i] = int(np.abs(x_extent - event.xdata).argmin())
-            gui.slice_y[i] = int(np.abs(y_extent - event.ydata).argmin())
-            if ch_ax["vline"] is not None:
+            x_extent = np.linspace(
+                gui.config['offset_x'] - gui.config['amp_x'],
+                gui.config['offset_x'] + gui.config['amp_x'],
+                nx
+            )
+            y_extent = np.linspace(
+                gui.config['offset_y'] + gui.config['amp_y'],
+                gui.config['offset_y'] - gui.config['amp_y'],
+                ny
+            )
+            new_sx = np.argmin(np.abs(x_extent - event.xdata))
+            new_sy = np.argmin(np.abs(y_extent - event.ydata))
+
+            gui.slice_x[i] = min(new_sx, nx-1)
+            gui.slice_y[i] = min(new_sy, ny-1)
+
+            if ch_ax["vline"]:
                 ch_ax["vline"].set_xdata([x_extent[gui.slice_x[i]]])
-            if ch_ax["hline"] is not None:
+            if ch_ax["hline"]:
                 ch_ax["hline"].set_ydata([y_extent[gui.slice_y[i]]])
-            current_data = gui.data if gui.data else []
-            display_data(gui, current_data)
+
+            display_data(gui, gui.data)
             return

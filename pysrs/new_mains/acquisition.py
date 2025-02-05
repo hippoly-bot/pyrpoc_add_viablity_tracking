@@ -9,13 +9,13 @@ from .galvo_funcs import Galvo
 from .run_image_2d import raster_scan
 
 def start_scan(gui):
+    # We do not show a message box; we simply disable the button in the GUI code so it won't be called again.
     if gui.running:
-        messagebox.showwarning('Warning', 'Scan is already running.')
+        # If for some reason it's called again, just return silently
         return
 
     rpoc_mask = None
     rpoc_do_chan = None
-
     if gui.rpoc_enabled.get() and gui.apply_mask_var.get():
         if hasattr(gui, 'rpoc_mask') and gui.rpoc_mask is not None:
             rpoc_mask = gui.rpoc_mask
@@ -24,9 +24,9 @@ def start_scan(gui):
             messagebox.showerror("Mask Error", "No valid mask loaded.")
             return
 
-    # Mark scanning
     gui.running = True
-    # Disable both 'Acquire' and 'Acq. Continuous'
+
+    # Disable 'Acquire' and 'Acq. Continuous'
     gui.continuous_button['state'] = 'disabled'
     gui.single_button['state'] = 'disabled'
     gui.stop_button['state'] = 'normal'
@@ -41,7 +41,6 @@ def start_scan(gui):
 def stop_scan(gui):
     gui.running = False
     gui.acquiring = False
-    # Re-enable both buttons
     gui.continuous_button['state'] = 'normal'
     gui.single_button['state'] = 'normal'
     gui.stop_button['state'] = 'disabled'
@@ -63,18 +62,15 @@ def scan(gui, rpoc_mask=None, rpoc_do_chan=None):
         messagebox.showerror('Error', f'Cannot display data: {e}')
     finally:
         gui.running = False
-        # restore buttons
         gui.continuous_button['state'] = 'normal'
         gui.single_button['state'] = 'normal'
         gui.stop_button['state'] = 'disabled'
 
 def acquire(gui, startup=False):
-    # If we're already scanning, warn
+    # No 'Stop continuous first' message box: we rely on disabling the buttons in the GUI.
     if gui.running and not startup:
-        messagebox.showwarning('Warning', 'Stop continuous acquisition first.')
-        return
+        return  # do nothing if scanning is ongoing
 
-    # Mark that we are acquiring
     gui.acquiring = True
     gui.stop_button['state'] = 'normal'
     gui.continuous_button['state'] = 'disabled'
@@ -91,7 +87,7 @@ def acquire(gui, startup=False):
         elif gui.hyperspectral_enabled.get() and not gui.save_acquisitions.get():
             numshifts_str = gui.entry_numshifts.get().strip()
             filename = None
-        elif not gui.hyperspectral_enabled.get() and gui.save_acquisitions.get():
+        elif (not gui.hyperspectral_enabled.get()) and gui.save_acquisitions.get():
             numshifts_str = gui.save_num_entry.get().strip()
             filename = gui.save_file_entry.get().strip()
             if not filename:
@@ -207,7 +203,8 @@ def save_images(gui, images, filename):
         channel_frames = [frame[ch_idx] for frame in images]
         counter = 1
 
-        if 'channel_names' in gui.config and len(gui.config['channel_names']) > ch_idx:
+        # label from channel_names, or fallback
+        if 'channel_names' in gui.config and ch_idx < len(gui.config['channel_names']):
             channel_suffix = gui.config['channel_names'][ch_idx]
         elif ch_idx < len(gui.config['ai_chans']):
             channel_suffix = gui.config['ai_chans'][ch_idx]
