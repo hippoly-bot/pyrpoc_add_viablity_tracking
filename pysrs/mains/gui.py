@@ -731,7 +731,14 @@ class GUI:
             self.continuous_button.configure(state='normal')
 
     def toggle_rpoc_fields(self):
-        self.update_rpoc_options()
+        if self.apply_mask_var.get():     
+            if not hasattr(self, 'rpoc_mask') or self.rpoc_mask is None:
+                messagebox.showerror("Mask Error", "No valid mask loaded.")
+                self.apply_mask_var.set(False)  
+                return
+            
+        if self.data is not None:
+            display.display_data(self, self.data)
 
 
 

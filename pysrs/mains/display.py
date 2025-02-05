@@ -150,6 +150,49 @@ def display_data(gui, data_list):
         ax_vslice.tick_params(axis='both', labelsize=8)
         ax_vslice.set_ylim(y_extent[-1], y_extent[0])
 
+    if "mask_handle" not in ch_ax:
+            ch_ax["mask_handle"] = None
+
+    if gui.apply_mask_var.get() and hasattr(gui, "rpoc_mask") and gui.rpoc_mask is not None:
+        mask = gui.rpoc_mask
+        mask = np.array(mask)
+        mask = (mask > 128)
+
+        if mask.shape != (ny, nx):
+            from PIL import Image
+            temp_pil = Image.fromarray(mask.astype(np.uint8)*255)
+            temp_pil = temp_pil.resize((nx, ny), Image.NEAREST)
+            mask = np.array(temp_pil) > 128
+
+        mask_rgba = np.zeros((ny, nx, 4), dtype=float)
+        mask_rgba[..., 0] = mask  
+        mask_rgba[..., 3] = 0.4 * mask  
+
+        x_extent = np.linspace(
+            gui.config['offset_x'] - gui.config['amp_x'],
+            gui.config['offset_x'] + gui.config['amp_x'],
+            nx
+        )
+        y_extent = np.linspace(
+            gui.config['offset_y'] + gui.config['amp_y'],
+            gui.config['offset_y'] - gui.config['amp_y'],
+            ny
+        )
+        extent = [x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]]
+
+        if ch_ax["mask_handle"] is None:
+            mask_im = ax_main.imshow(mask_rgba, extent=extent, origin='upper', aspect='equal')
+            ch_ax["mask_handle"] = mask_im
+        else:
+            ch_ax["mask_handle"].set_data(mask_rgba)
+            ch_ax["mask_handle"].set_extent(extent)
+
+        ch_ax["mask_handle"].set_visible(True)
+
+    else:
+        if ch_ax["mask_handle"] is not None:
+            ch_ax["mask_handle"].set_visible(False)
+
     gui.canvas.draw_idle()
 
 def on_image_click(gui, event):
