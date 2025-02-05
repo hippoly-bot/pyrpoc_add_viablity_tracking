@@ -102,7 +102,6 @@ def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
 
         for row_idx in range(galvo.numsteps_y):
             row_data = mask[row_idx, :] 
-            print(f'line 101')
             padded_row = np.concatenate((
                 np.zeros(galvo.extrasteps_left, dtype=bool),
                 row_data,
@@ -113,6 +112,7 @@ def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
 
         flattened = padded_mask.ravel() 
         ttl_signal = np.repeat(flattened, galvo.pixel_samples).astype(bool)
+
 
         do_task.do_channels.add_do_chan(f"{galvo.device}/{do_chan}")
         do_task.timing.cfg_samp_clk_timing(
