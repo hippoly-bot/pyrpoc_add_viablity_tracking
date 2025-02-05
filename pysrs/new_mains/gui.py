@@ -8,6 +8,7 @@ from pathlib import Path
 from PIL import Image
 from pysrs.new_mains.zaber import ZaberStage
 from pysrs.new_mains.rpoc2 import RPOC
+# Use the updated widgets with old-style aesthetics:
 from pysrs.new_mains.widgets import CollapsiblePane, ScrollableFrame
 from pysrs.new_mains.utils import Tooltip, generate_data, convert
 from pysrs.new_mains import acquisition
@@ -21,20 +22,15 @@ FOLDERICON_PATH = BASE_DIR / "data" / "folder_icon.png"
 
 class GUI:
     """
-    Main GUI for Stimulated Raman system.
-
-    Summary of Button Flow:
-      - 'Acq. Continuous' -> acquisition.start_scan(self)
-      - 'Acquire' -> acquisition.acquire(self)
-      - 'Stop' -> acquisition.stop_scan(self)
-    The 'Acq. Continuous' and 'Acquire' buttons are disabled during scanning so only 'Stop' is clickable.
+    Main GUI for Stimulated Raman system, with the OLD aesthetics re-implemented.
     """
-
     def __init__(self, root):
         self.root = root
         self.root.title('Stimulated Raman Coordinator')
         self.root.geometry('1200x800')
-        self.bg_color = '#3A3A3A'
+
+        # Old color aesthetics
+        self.bg_color = '#3A3A3A'  # or '#2E2E2E', whichever final color you preferred
         self.root.configure(bg=self.bg_color)
 
         self.simulation_mode = tk.BooleanVar(value=True)
@@ -45,14 +41,13 @@ class GUI:
         self.root.protocol('WM_DELETE_WINDOW', self.close)
         self.root.bind("<Button-1>", self.on_global_click, add="+")
 
-        # config dictionary with new offsets, extrasteps_left, extrasteps_right
+        # New config dictionary with offsets, extrasteps, etc.
         self.config = {
             'device': 'Dev1',
             'ao_chans': ['ao1', 'ao0'],
             'ai_chans': ['ai1'],
             'channel_names': ['ai1'],
             'zaber_chan': 'COM3',
-
             'amp_x': 0.5,
             'amp_y': 0.5,
             'offset_x': 0.0,
@@ -82,26 +77,31 @@ class GUI:
         self.slice_y = []
         self.data = None
 
+        # Main layout: PanedWindow with left sidebar + right display
         self.main_frame = ttk.Frame(self.root)
         self.main_frame.pack(fill="both", expand=True)
 
         self.paned = ttk.PanedWindow(self.main_frame, orient="horizontal")
         self.paned.pack(fill="both", expand=True)
 
+        # Left sidebar (scrollable)
         self.sidebar_container = ScrollableFrame(self.paned)
         self.paned.add(self.sidebar_container, weight=0)
         self.root.update_idletasks()
         self.sidebar = self.sidebar_container.scrollable_frame
 
+        # Right display area
         self.display_area = ttk.Frame(self.paned)
         self.paned.add(self.display_area, weight=1)
         self.display_area.rowconfigure(0, weight=1)
         self.display_area.columnconfigure(0, weight=1)
 
+        # For colorbar settings
         self.auto_colorbar_vars = {}
         self.fixed_colorbar_vars = {}
         self.fixed_colorbar_widgets = {}
 
+        # Configure the "clam" theme + old style color details
         style = ttk.Style()
         style.theme_use('clam')
         style.configure("Vertical.TScrollbar",
@@ -112,14 +112,24 @@ class GUI:
 
         self.create_widgets()
 
+        # Default sidebar width around 450, then re-check after a moment
         self.root.after(100, lambda: self.paned.sashpos(0, 450))
         self.update_sidebar_visibility()
         self.root.after(500, self.update_sidebar_visibility)
 
-        # Startup single acquisition in a separate thread
-        threading.Thread(target=acquisition.acquire, args=(self,), kwargs={"startup": True}, daemon=True).start()
+        # Startup single acquisition in a thread
+        threading.Thread(
+            target=acquisition.acquire,
+            args=(self,),
+            kwargs={"startup": True},
+            daemon=True
+        ).start()
 
     def update_sidebar_visibility(self):
+        """
+        Toggle the sidebar’s width depending on whether
+        any CollapsiblePane is expanded or not.
+        """
         panes = [child for child in self.sidebar.winfo_children() if hasattr(child, 'show')]
         visible = any(pane.show.get() for pane in panes)
         try:
@@ -131,12 +141,18 @@ class GUI:
                 desired_width = 450
                 self.paned.sashpos(0, desired_width)
                 self.sidebar_container.configure(width=desired_width)
+
             self.paned.event_generate("<Configure>")
             self.root.update_idletasks()
         except Exception as e:
             print("Error updating sidebar visibility:", e)
 
     def create_widgets(self):
+        """
+        Create all sub-panes (Control Panel, Delay Stage, etc.) using
+        old-code aesthetics for consistency.
+        """
+        # Colors & fonts from old code
         self.bg_color = '#2E2E2E'
         self.fg_color = '#D0D0D0'
         self.highlight_color = '#4A90E2'
@@ -149,6 +165,8 @@ class GUI:
         self.root.configure(bg=self.bg_color)
         style = ttk.Style()
         style.theme_use('clam')
+
+        # Old style configurations
         style.configure('TFrame', background=self.bg_color)
         style.configure('TLabelFrame', background=self.bg_color, borderwidth=2, relief="groove")
         style.configure('TLabelFrame.Label', background=self.bg_color, foreground=self.fg_color, font=bold_font)
@@ -158,15 +176,19 @@ class GUI:
         style.configure('TButton', background=self.button_bg, foreground=self.fg_color, font=bold_font, padding=8)
         style.map('TButton', background=[('active', self.highlight_color)])
         style.configure('TCheckbutton', background=self.bg_color, foreground=self.fg_color, font=default_font)
-        style.map('TCheckbutton', background=[('active', '#4A4A4A')], foreground=[('active', '#D0D0D0')])
-        style.configure('TEntry', fieldbackground=self.entry_bg, foreground=self.entry_fg,
+        style.map('TCheckbutton', background=[('active', '#4A4A4A')],
+                  foreground=[('active', '#D0D0D0')])
+        style.configure('TEntry',
+                        fieldbackground=self.entry_bg, foreground=self.entry_fg,
                         insertcolor="#CCCCCC", font=default_font, padding=3)
         style.map('TEntry',
                   fieldbackground=[('readonly', '#303030'), ('disabled', '#505050')],
                   foreground=[('readonly', '#AAAAAA'), ('disabled', '#888888')],
                   insertcolor=[('readonly', '#666666'), ('disabled', '#888888')])
 
+        #
         # 1) CONTROL PANEL
+        #
         self.cp_pane = CollapsiblePane(self.sidebar, text='Control Panel', gui=self)
         self.cp_pane.pack(fill="x", padx=10, pady=5)
 
@@ -205,7 +227,8 @@ class GUI:
         self.save_checkbutton.grid(row=0, column=0, padx=0, sticky='w')
 
         self.simulation_mode_checkbutton = ttk.Checkbutton(
-            self.checkbox_frame, text='Simulate Data', variable=self.simulation_mode
+            self.checkbox_frame, text='Simulate Data',
+            variable=self.simulation_mode
         )
         self.simulation_mode_checkbutton.grid(row=0, column=1, padx=0, sticky='w')
 
@@ -218,6 +241,7 @@ class GUI:
         ttk.Label(self.io_frame, text='Images to acquire').grid(row=0, column=0, sticky='w', padx=(5, 0))
         self.save_num_entry = ttk.Entry(self.io_frame, width=8)
         self.save_num_entry.insert(0, '1')
+        self.apply_feedback_to_entry(self.save_num_entry)
         self.save_num_entry.grid(row=0, column=1, sticky='w', padx=(5, 5))
 
         self.progress_label = ttk.Label(self.io_frame, text='(0/0)', font=('Calibri', 12, 'bold'))
@@ -229,12 +253,15 @@ class GUI:
 
         self.save_file_entry = ttk.Entry(self.path_frame, width=30)
         self.save_file_entry.insert(0, 'Documents/example.tiff')
+        self.apply_feedback_to_entry(self.save_file_entry)
         self.save_file_entry.grid(row=0, column=0, padx=5, sticky='ew')
 
         browse_button = ttk.Button(self.path_frame, text="📂", width=2, command=self.browse_save_path)
         browse_button.grid(row=0, column=1, padx=5)
 
+        #
         # 2) DELAY STAGE
+        #
         self.delay_pane = CollapsiblePane(self.sidebar, text='Delay Stage Settings', gui=self)
         self.delay_pane.pack(fill="x", padx=10, pady=5)
 
@@ -244,12 +271,14 @@ class GUI:
         for col in range(3):
             self.delay_stage_frame.columnconfigure(col, weight=1)
 
-        ttk.Label(self.delay_stage_frame, text="Zaber Port (COM #)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
+        ttk.Label(self.delay_stage_frame, text="Zaber Port (COM #)").grid(
+            row=0, column=0, padx=5, pady=3, sticky="w"
+        )
         self.zaber_port_entry = ttk.Entry(self.delay_stage_frame, width=10)
         self.zaber_port_entry.insert(0, self.config['zaber_chan'])
         self.zaber_port_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
-
-        # Bind focus-out to show feedback on success
+        self.apply_feedback_to_entry(self.zaber_port_entry)
+        # Bind for immediate feedback on port change
         self.zaber_port_entry.bind("<FocusOut>", self._on_zaber_port_changed)
         self.zaber_port_entry.bind("<Return>", self._on_zaber_port_changed)
 
@@ -262,38 +291,47 @@ class GUI:
         ttk.Label(self.delay_stage_frame, text="Start (µm)").grid(row=2, column=0, sticky="w", padx=5, pady=3)
         self.entry_start_um = ttk.Entry(self.delay_stage_frame, width=10)
         self.entry_start_um.insert(0, str(self.hyper_config['start_um']))
+        self.apply_feedback_to_entry(self.entry_start_um)
         self.entry_start_um.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
 
         ttk.Label(self.delay_stage_frame, text="Stop (µm)").grid(row=3, column=0, sticky="w", padx=5, pady=3)
         self.entry_stop_um = ttk.Entry(self.delay_stage_frame, width=10)
         self.entry_stop_um.insert(0, str(self.hyper_config['stop_um']))
+        self.apply_feedback_to_entry(self.entry_stop_um)
         self.entry_stop_um.grid(row=3, column=1, padx=5, pady=3, sticky="ew")
 
         ttk.Label(self.delay_stage_frame, text="Single Delay (µm)").grid(row=4, column=0, sticky="w", padx=5, pady=3)
         self.entry_single_um = ttk.Entry(self.delay_stage_frame, width=10)
         self.entry_single_um.insert(0, str(self.hyper_config['single_um']))
+        self.apply_feedback_to_entry(self.entry_single_um)
         self.entry_single_um.grid(row=4, column=1, padx=5, pady=3, sticky="ew")
         self.entry_single_um.bind('<Return>', self.single_delay_changed)
         self.entry_single_um.bind('<FocusOut>', self.single_delay_changed)
 
         ttk.Label(self.delay_stage_frame, text="Number of Shifts").grid(row=5, column=0, sticky="w", padx=5, pady=3)
         self.entry_numshifts = ttk.Entry(self.delay_stage_frame, width=10)
+        self.apply_feedback_to_entry(self.entry_numshifts)
         self.entry_numshifts.insert(0, '10')
         self.entry_numshifts.grid(row=5, column=1, padx=5, pady=3, sticky="ew")
 
         self.calibrate_button = ttk.Button(
-            self.delay_stage_frame, text='Calibrate', command=lambda: calibration.calibrate_stage(self)
+            self.delay_stage_frame, text='Calibrate',
+            command=lambda: calibration.calibrate_stage(self)
         )
         self.calibrate_button.grid(row=6, column=0, padx=5, pady=10, sticky='ew')
 
         self.movestage_button = ttk.Button(
-            self.delay_stage_frame, text='Move Stage', command=self.force_zaber
+            self.delay_stage_frame, text='Move Stage',
+            command=self.force_zaber
         )
         self.movestage_button.grid(row=6, column=1, padx=5, pady=10, sticky='ew')
 
+        #
         # 3) PRIOR STAGE
+        #
         self.prior_pane = CollapsiblePane(self.sidebar, text='Prior Stage Settings', gui=self)
         self.prior_pane.pack(fill="x", padx=10, pady=5)
+
         self.prior_stage_frame = ttk.Frame(self.prior_pane.container, padding=(12, 12))
         self.prior_stage_frame.grid(row=0, column=0, sticky="nsew")
         for col in range(3):
@@ -303,19 +341,21 @@ class GUI:
         self.prior_port_entry = ttk.Entry(self.prior_stage_frame, width=10)
         self.prior_port_entry.insert(0, "4")
         self.prior_port_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
-
-        # Show feedback if changed
+        self.apply_feedback_to_entry(self.prior_port_entry)
         self.prior_port_entry.bind("<FocusOut>", self._on_prior_port_changed)
         self.prior_port_entry.bind("<Return>", self._on_prior_port_changed)
 
         ttk.Label(self.prior_stage_frame, text="Set Z Height (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="w")
         self.prior_z_entry = ttk.Entry(self.prior_stage_frame, width=10)
+        self.apply_feedback_to_entry(self.prior_z_entry)
         self.prior_z_entry.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
 
         self.prior_move_button = ttk.Button(self.prior_stage_frame, text="Move Z", command=self.move_prior_stage)
         self.prior_move_button.grid(row=2, column=0, columnspan=2, pady=5, sticky="ew")
 
+        #
         # 4) RPOC
+        #
         self.rpoc_pane = CollapsiblePane(self.sidebar, text='RPOC Masking', gui=self)
         self.rpoc_pane.pack(fill="x", padx=10, pady=5)
 
@@ -326,10 +366,8 @@ class GUI:
 
         self.apply_mask_var = tk.BooleanVar(value=False)
         apply_mask_check = ttk.Checkbutton(
-            self.rpoc_frame,
-            text='Apply RPOC Mask',
-            variable=self.apply_mask_var,
-            command=self.toggle_rpoc_fields
+            self.rpoc_frame, text='Apply RPOC Mask',
+            variable=self.apply_mask_var, command=self.toggle_rpoc_fields
         )
         apply_mask_check.grid(row=0, column=0, columnspan=3, padx=5, pady=5, sticky="w")
 
@@ -337,9 +375,11 @@ class GUI:
         loadmask_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
 
         self.mask_status_entry = ttk.Entry(
-            self.rpoc_frame, width=20, font=('Calibri', 12), justify="center",
-            textvariable=self.mask_file_path, state="readonly"
+            self.rpoc_frame, width=20, font=('Calibri', 12),
+            justify="center", textvariable=self.mask_file_path,
+            state="readonly"
         )
+        self.apply_feedback_to_entry(self.mask_status_entry)
         self.mask_status_entry.grid(row=1, column=1, padx=5, pady=5, columnspan=1, sticky="ew")
 
         newmask_button = ttk.Button(self.rpoc_frame, text='Create New Mask', command=self.create_mask)
@@ -351,19 +391,22 @@ class GUI:
         self.rpoc_channel_var = tk.StringVar()
         self.rpoc_channel_entry = ttk.Entry(self.rpoc_frame, textvariable=self.rpoc_channel_var)
         self.rpoc_channel_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+        self.apply_feedback_to_entry(self.rpoc_channel_entry)
         self.rpoc_channel_entry.bind("<Return>", self.finalize_selection)
         self.rpoc_channel_entry.bind("<FocusOut>", self.finalize_selection)
 
         ttk.Label(self.rpoc_frame, text='RPOC DO Line:').grid(row=4, column=0, padx=5, pady=5, sticky='e')
         self.mask_ttl_channel_var = tk.StringVar(value="po4")
         self.mask_ttl_entry = ttk.Entry(self.rpoc_frame, textvariable=self.mask_ttl_channel_var)
-        self.mask_ttl_entry.bind("<Return>", lambda event: self.show_feedback(self.mask_ttl_entry))
-        self.mask_ttl_entry.bind("<FocusOut>", lambda event: self.show_feedback(self.mask_ttl_entry))
+        self.apply_feedback_to_entry(self.mask_ttl_entry)
         self.mask_ttl_entry.grid(row=4, column=1, padx=5, pady=5, columnspan=1, sticky='ew')
 
+        #
         # 5) PARAMETER ENTRY
+        #
         self.param_pane = CollapsiblePane(self.sidebar, text='Parameters', gui=self)
         self.param_pane.pack(fill="x", padx=10, pady=5)
+
         self.param_frame = ttk.Frame(self.param_pane.container, padding=(0, 0))
         self.param_frame.grid(row=0, column=0, sticky="ew")
 
@@ -388,9 +431,12 @@ class GUI:
             entry.grid(row=row+1, column=col, padx=5, pady=(0, 5), sticky='ew')
             self.param_entries[key] = entry
             self.param_frame.columnconfigure(col, weight=1)
-            entry.bind("<FocusOut>", lambda event: self.update_config())
-            entry.bind("<Return>", lambda event: self.update_config())
 
+            # On losing focus or pressing Return, update config
+            entry.bind("<FocusOut>", lambda e: self.update_config())
+            entry.bind("<Return>", lambda e: self.update_config())
+
+        # Tiny info label w/ tooltip
         self.info_frame = ttk.Frame(self.param_frame)
         self.info_frame.grid(row=0, column=0, columnspan=1, sticky="ew")
         self.info_frame.grid_propagate(False)
@@ -401,24 +447,27 @@ class GUI:
 
         galvo_tooltip_text = (
             "• Device: NI-DAQ device (e.g., 'Dev1')\n"
-            "• AO Chans: analog outputs (e.g., 'ao1,ao0')\n"
-            "• AI Chans: analog inputs (e.g., 'ai1,ai2')\n"
+            "• AO Chans, AI Chans\n"
             "• Amp X/Y + Offset X/Y\n"
-            "• Steps X/Y\n"
-            "• Extra Steps Left/Right (X padding)\n"
-            "• Sampling Rate, Dwell, etc.\n"
-            "• Input Names: labels for display"
+            "• Steps X/Y + Extra Steps\n"
+            "• Rate, Dwell, Input Names\n"
+            "No quotes needed; separate multiple channels by commas."
         )
         Tooltip(info_button_param, galvo_tooltip_text)
 
+        #
         # 6) COLORBAR SETTINGS
+        #
         self.cb_pane = CollapsiblePane(self.sidebar, text="Colorbar Settings", gui=self)
         self.cb_pane.pack(fill="x", padx=10, pady=5)
+
         self.cb_frame = ttk.Frame(self.cb_pane.container, padding=(12, 12))
         self.cb_frame.grid(row=0, column=0, sticky="ew")
         self.create_colorbar_settings()
 
+        #
         # 7) DATA DISPLAY
+        #
         display_frame = ttk.LabelFrame(self.display_area, text='Data Display', padding=(10, 10))
         display_frame.grid(row=0, column=0, sticky='nsew', padx=10, pady=10)
         display_frame.rowconfigure(0, weight=1)
@@ -436,12 +485,21 @@ class GUI:
 
         self.canvas.mpl_connect('button_press_event', lambda event: display.on_image_click(self, event))
 
+        # Finally, set initial states
         self.toggle_hyperspectral_fields()
         self.toggle_save_options()
         self.toggle_rpoc_fields()
 
+    #
+    # ----------------- Internal Methods -----------------
+    #
+    def on_global_click(self, event):
+        """Deselect Entry widgets when clicking elsewhere."""
+        if not isinstance(event.widget, tk.Entry):
+            self.root.focus_set()
+
     def _on_zaber_port_changed(self, event):
-        """Bind for zaber_port_entry so we attempt to parse and connect, then show feedback if ok, else revert."""
+        """Check if user changed the Zaber port entry, attempt reconnect, revert if fails."""
         new_port = self.zaber_port_entry.get().strip()
         old_port = self.config['zaber_chan']
         if new_port == old_port:
@@ -460,9 +518,9 @@ class GUI:
             self.zaber_port_entry.insert(0, old_port)
 
     def _on_prior_port_changed(self, event):
-        """Just show feedback if parse is ok; doesn't forcibly connect anything, but let's parse the int."""
+        """Just checks if the input is a valid int (0-9999), revert if not."""
         val = self.prior_port_entry.get().strip()
-        old_val = "4"  # or we can store a prior_value if you want to revert
+        old_val = "4"
         try:
             test = int(val)
             if test < 0 or test > 9999:
@@ -472,10 +530,6 @@ class GUI:
             messagebox.showerror("Value Error", f"Invalid Prior port {val}. Reverting.")
             self.prior_port_entry.delete(0, tk.END)
             self.prior_port_entry.insert(0, old_val)
-
-    def on_global_click(self, event):
-        if not isinstance(event.widget, tk.Entry):
-            self.root.focus_set()
 
     def single_delay_changed(self, event=None):
         old_val = self.hyper_config['single_um']
@@ -491,6 +545,7 @@ class GUI:
             self.entry_single_um.insert(0, str(old_val))
 
     def force_zaber(self):
+        """Move the Zaber delay stage to single_um position."""
         move_position = self.hyper_config['single_um']
         try:
             self.zaber_stage.connect()
@@ -500,6 +555,7 @@ class GUI:
             messagebox.showerror("Stage Move Error", f"Error moving stage: {e}")
 
     def move_prior_stage(self):
+        """Move the Prior stage to the user-specified Z height."""
         try:
             port = int(self.prior_port_entry.get().strip())
             z_height = int(self.prior_z_entry.get().strip())
@@ -518,6 +574,9 @@ class GUI:
         except ValueError:
             messagebox.showerror("Input Error", "Please enter a valid numeric Z height and port.")
 
+    #
+    # ----------------- RPOC Masking -----------------
+    #
     def create_mask(self):
         if self.data is None or len(np.shape(self.data)) != 3:
             messagebox.showerror("Data Error", "No valid data available. Acquire an image first.")
@@ -565,8 +624,11 @@ class GUI:
             self.mask_file_path.set("No mask loaded")
             self.rpoc_mask = None
 
+    #
+    # ----------------- Config & Param Handling -----------------
+    #
     def update_config(self):
-        # For the parameter entries in param pane only
+        """Update self.config from param entry boxes in the 'Parameters' pane."""
         for key, entry in self.param_entries.items():
             old_val = self.config[key]
             value = entry.get().strip()
@@ -593,7 +655,6 @@ class GUI:
                         self.config[key] = int_val
                         self.show_feedback(entry)
                 else:
-                    # fallback
                     if int(value) != self.config[key]:
                         self.config[key] = int(value)
                         self.show_feedback(entry)
@@ -608,12 +669,21 @@ class GUI:
         self.toggle_save_options()
         self.toggle_rpoc_fields()
 
+    def apply_feedback_to_entry(self, entry_widget):
+        """Bind focus-out and return key to apply feedback on all entries."""
+        entry_widget.bind("<FocusOut>", lambda event: self.show_feedback(entry_widget))
+        entry_widget.bind("<Return>", lambda event: self.show_feedback(entry_widget))
+
     def show_feedback(self, widget):
+        """Briefly highlight an Entry widget in light green to confirm it was accepted."""
         local_style = ttk.Style()
         local_style.configure("Feedback.TEntry", fieldbackground="lightgreen")
         widget.configure(style="Feedback.TEntry")
         self.root.after(500, lambda: widget.configure(style="TEntry"))
 
+    #
+    # ----------------- Save Options / Hyperspectral toggles -----------------
+    #
     def browse_save_path(self):
         filepath = filedialog.asksaveasfilename(
             defaultextension='.tiff',
@@ -661,23 +731,18 @@ class GUI:
     def toggle_rpoc_fields(self):
         self.update_rpoc_options()
 
+    #
+    # ----------------- Colorbar Settings -----------------
+    #
     def create_colorbar_settings(self):
-        """
-        Build colorbar settings keyed by the user-facing 'channel_name'
-        rather than the raw AI channels, so that color scaling is possible
-        even if the user picks unique display names.
-        """
-        # Clear out old
+        # Remove old
         existing_widgets = dict(self.fixed_colorbar_widgets)
-
-        # We rely on self.config['channel_names'] primarily
         ai_list = self.config['ai_chans']
         names_list = self.config['channel_names']
         n_ch = max(len(ai_list), len(names_list))
 
-        # remove any old
+        # Clear out any that no longer exist
         for oldkey in list(existing_widgets.keys()):
-            # oldkey is the display name from a prior iteration
             if oldkey not in names_list:
                 parent_frame = self.fixed_colorbar_widgets[oldkey].master
                 parent_frame.destroy()
@@ -685,13 +750,10 @@ class GUI:
                 del self.fixed_colorbar_vars[oldkey]
                 del self.fixed_colorbar_widgets[oldkey]
 
-        # build new
+        # Create new rows for each channel name
         for i in range(n_ch):
-            # The label that the user sees:
-            if i < len(names_list):
-                label = names_list[i]
-            else:
-                label = ai_list[i] if i < len(ai_list) else f"chan{i}"
+            label = (names_list[i] if i < len(names_list) else
+                     ai_list[i] if i < len(ai_list) else f"chan{i}")
 
             if label in self.fixed_colorbar_widgets:
                 continue
@@ -705,8 +767,8 @@ class GUI:
             auto_var = tk.BooleanVar(value=True)
             self.auto_colorbar_vars[label] = auto_var
 
-            def command_wrapper(this_label=label):
-                self.update_colorbar_entry_state(this_label)
+            def command_wrapper(chan_label=label):
+                self.update_colorbar_entry_state(chan_label)
 
             auto_cb = ttk.Checkbutton(
                 row_frame,
@@ -721,15 +783,12 @@ class GUI:
             fixed_entry = ttk.Entry(row_frame, textvariable=fixed_var, width=8)
             fixed_entry.pack(side="left", padx=5)
             self.fixed_colorbar_widgets[label] = fixed_entry
+
             fixed_entry.configure(state='disabled')
 
         self.cb_frame.update_idletasks()
 
     def update_colorbar_entry_state(self, display_name):
-        """
-        Enable/disable the fixed colorbar entry based on the 'auto scale' checkbox
-        for the user-facing channel name.
-        """
         widget = self.fixed_colorbar_widgets.get(display_name)
         if not widget:
             return
@@ -738,6 +797,9 @@ class GUI:
         else:
             widget.configure(state='normal')
 
+    #
+    # ----------------- Cleanup -----------------
+    #
     def close(self):
         self.running = False
         self.zaber_stage.disconnect()
