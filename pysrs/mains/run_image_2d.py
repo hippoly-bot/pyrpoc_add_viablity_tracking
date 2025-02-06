@@ -70,6 +70,7 @@ def raster_scan(ai_channels, galvo):
         return results
 
 def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
+    print('running rpoc')
     if isinstance(ai_channels, str):
         ai_channels = [ai_channels]
 
