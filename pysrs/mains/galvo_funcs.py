@@ -87,24 +87,20 @@ class Galvo:
         num_y = self.numsteps_y
         num_x = self.numsteps_x + self.extrasteps_left + self.extrasteps_right
 
-        # We'll define dwell_on = dwell * dwell_multiplier
-        # If mask pixel = True, we use dwell_on. Otherwise dwell_off = dwell.
+        print(np.shape(mask))
+        print(f' numx and numy: {num_x}, {num_y}')
+
         dwell_on = dwell * dwell_multiplier
         dwell_off = dwell
 
-        # For the "flying" x steps, we want to linearly span offset_x - amp_x to +amp_x, etc.
-        # But we do it pixel by pixel:
+
         x_min = self.offset_x - self.amp_x
         x_max = self.offset_x + self.amp_x
-        # We'll form an array of x positions: e.g. np.linspace(..., num_x, endpoint=False)
-        # so that pixel i is at x_positions[i]
         x_positions = np.linspace(x_min, x_max, num_x, endpoint=False)
-        # Similarly for y_positions (top row to bottom row):
         y_positions = np.linspace(self.offset_y + self.amp_y,
                                 self.offset_y - self.amp_y,
                                 num_y)
 
-        # We build lists of samples row by row
         x_wave_list = []
         y_wave_list = []
         pixel_map = np.zeros((num_y, num_x), dtype=int)
@@ -112,26 +108,21 @@ class Galvo:
         for row_idx in range(num_y):
             row_y = y_positions[row_idx]
             for col_idx in range(num_x):
-                # Decide dwell for this pixel
-                if mask[row_idx, col_idx]:
+                if col_idx < self.extrasteps_left or col_idx >= (num_x - self.extrasteps_right): # for clarity im leaving this out of the else - we need to remember to account for extrasteps here
+                    this_dwell = dwell_off
+                elif mask[row_idx, col_idx - self.extrasteps_left]:
                     this_dwell = dwell_on
                 else:
                     this_dwell = dwell_off
 
-                # Number of samples for this pixel
                 pixel_samps = max(1, int(this_dwell * rate))
 
-                # The galvo X remains constant for these pixel_samps
                 x_val = x_positions[col_idx]
                 x_wave_list.append(np.full(pixel_samps, x_val))
 
-                # The galvo Y remains constant for these pixel_samps
                 y_wave_list.append(np.full(pixel_samps, row_y))
 
-                # Store in pixel_map
                 pixel_map[row_idx, col_idx] = pixel_samps
-
-        # Concatenate
         x_wave = np.concatenate(x_wave_list)
         y_wave = np.concatenate(y_wave_list)
         return x_wave, y_wave, pixel_map

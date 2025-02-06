@@ -66,6 +66,7 @@ class GUI:
         self.zaber_stage = ZaberStage(port=self.config['zaber_chan'])
         self.rpoc_mode_var = tk.StringVar(value='standard')
         self.dwell_mult_var = tk.DoubleVar(value=2.0)
+        self.rpoc_mask = None
 
         self.channel_axes = []
         self.slice_x = []

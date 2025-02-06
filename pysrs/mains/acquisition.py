@@ -54,7 +54,7 @@ def scan(gui, rpoc_mask=None, rpoc_do_chan=None):
             galvo = Galvo(gui.config, 
                           rpoc_mask=rpoc_mask, 
                           rpoc_do_chan=rpoc_do_chan,
-                          rpoc_mode=gui.rpoc_mode, # CHATGPT READ THIS: note how this is not yet implemented in gui
+                          rpoc_mode=gui.rpoc_mode_var.get(), # CHATGPT READ THIS: note how this is not yet implemented in gui
                           dwell_multiplier=gui.dwell_mult_var.get()) # CHATGPT READ THIS: note how this is not yet implemented in GUI
             
             if gui.simulation_mode.get():
@@ -153,7 +153,7 @@ def acquire_multiple(gui, numshifts):
             data_list = generate_data(len(channels), config=gui.config)
         else:
             if gui.rpoc_mask is not None:
-                if gui.rpoc_mode_var.get() == 'standard': # CHATGPT READ THIS: again, not yet implemented in GUI, but I want the mode named 'standard'
+                if gui.rpoc_mode_var.get() == 'standard': 
                     data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var.get())
                 elif gui.rpoc_mode_var.get() == 'variable':
                     data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask, dwell_multiplier = gui.dwell_mult_var.get())

@@ -70,7 +70,6 @@ def raster_scan(ai_channels, galvo):
         return results
 
 def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
-    print('running rpoc')
     if isinstance(ai_channels, str):
         ai_channels = [ai_channels]
 
@@ -162,12 +161,14 @@ def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
 def variable_scan_rpoc(ai_channels, galvo, mask, dwell_multiplier=2.0):
     if isinstance(ai_channels, str):
         ai_channels = [ai_channels]
-
+    
     if isinstance(mask, Image.Image):
         mask = np.array(mask)
     if not isinstance(mask, np.ndarray):
         raise TypeError("Mask must be a NumPy array or PIL Image.")
     mask = mask > 128  # threshold
+
+
 
     x_wave, y_wave, pixel_map = galvo.gen_variable_waveform(mask, dwell_multiplier)
 
@@ -243,7 +244,6 @@ def variable_scan_rpoc(ai_channels, galvo, mask, dwell_multiplier=2.0):
 def build_rpoc_wave(mask_image, pixel_samples, total_x, total_y, high_voltage=5.0):
     mask_arr = np.array(mask_image)
     binary_mask = (mask_arr > 128).astype(np.uint8)
-    print(f'mask image shape {binary_mask.shape}')
 
     if binary_mask.shape != (total_y, total_x):
         mask_pil = Image.fromarray(binary_mask * 255)
