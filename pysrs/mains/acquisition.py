@@ -6,7 +6,7 @@ from PIL import Image
 from pysrs.mains.utils import generate_data, convert
 from pysrs.mains.display import display_data
 from pysrs.mains.galvo_funcs import Galvo
-from pysrs.mains.run_image_2d import raster_scan, raster_scan_rpoc
+from pysrs.mains.run_image_2d import raster_scan, raster_scan_rpoc, variable_scan_rpoc
 
 def start_scan(gui):
     if gui.running:
@@ -50,13 +50,20 @@ def scan(gui, rpoc_mask=None, rpoc_do_chan=None):
             gui.update_config()
             channels = [f"{gui.config['device']}/{ch}" for ch in gui.config['ai_chans']]
 
-            galvo = Galvo(gui.config, rpoc_mask=rpoc_mask, rpoc_do_chan=rpoc_do_chan)
+            galvo = Galvo(gui.config, 
+                          rpoc_mask=rpoc_mask, 
+                          rpoc_do_chan=rpoc_do_chan,
+                          rpoc_mode=gui.rpoc_mode, # CHATGPT READ THIS: note how this is not yet implemented in gui
+                          dwell_multiplier=gui.dwell_mult_var.get()) # CHATGPT READ THIS: note how this is not yet implemented in GUI
             
             if gui.simulation_mode.get():
                 data_list = generate_data(len(channels), config=gui.config)
             else:
                 if rpoc_mask is not None:
-                    data_list = raster_scan_rpoc(channels, galvo, rpoc_mask, do_chan=rpoc_do_chan)
+                    if gui.rpoc_mode_var.get() == 'standard': # CHATGPT READ THIS: again, not yet implemented in GUI, but I want the mode named 'standard'
+                        data_list = raster_scan_rpoc(channels, galvo, rpoc_mask, do_chan=rpoc_do_chan)
+                    elif gui.rpoc_mode_var.get() == 'variable':
+                        data_list = variable_scan_rpoc(channels, galvo, rpoc_mask, dwell_multiplier = gui.dwell_mult_var.get())
                 else:
                     data_list = raster_scan(channels, galvo)
             
@@ -127,26 +134,31 @@ def acquire(gui, startup=False):
         gui.stop_button['state'] = 'disabled'
 
 def acquire_multiple(gui, numshifts):
+    print(f'acquire multiple')
     images = []
     gui.progress_label.config(text=f'(0/{numshifts})')
     gui.root.update_idletasks()
     
     channels = [f"{gui.config['device']}/{ch}" for ch in gui.config['ai_chans']]
+    print(f'chans')
     galvo = Galvo(gui.config)
+    print(f'past config')
 
     for i in range(numshifts):
         if not gui.acquiring:
             break
-        if gui.simulation_mode.get():
-            data_list = generate_data(len(channels), config=gui.config)
 
         if gui.simulation_mode.get():
             data_list = generate_data(len(channels), config=gui.config)
         else:
             if gui.rpoc_mask is not None:
-                data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var.get())
+                if gui.rpoc_mode_var.get() == 'standard': # CHATGPT READ THIS: again, not yet implemented in GUI, but I want the mode named 'standard'
+                    data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var.get())
+                elif gui.rpoc_mode_var.get() == 'variable':
+                    data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask, dwell_multiplier = gui.dwell_mult_var.get())
             else:
                 data_list = raster_scan(channels, galvo)
+
         gui.root.after(0, display_data, gui, data_list)
 
         pil_images = [convert(d) for d in data_list]

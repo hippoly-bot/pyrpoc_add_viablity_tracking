@@ -157,6 +157,87 @@ def raster_scan_rpoc(ai_channels, galvo, mask, do_chan="port0/line5"):
 
     return results
 
+
+def variable_scan_rpoc(ai_channels, galvo, mask, dwell_multiplier=2.0):
+    if isinstance(ai_channels, str):
+        ai_channels = [ai_channels]
+
+    if isinstance(mask, Image.Image):
+        mask = np.array(mask)
+    if not isinstance(mask, np.ndarray):
+        raise TypeError("Mask must be a NumPy array or PIL Image.")
+    mask = mask > 128  # threshold
+
+    x_wave, y_wave, pixel_map = galvo.gen_variable_waveform(mask, dwell_multiplier)
+
+    # Prepare tasks
+    with nidaqmx.Task() as ao_task, nidaqmx.Task() as ai_task:
+        # Add channels
+        for chan in galvo.ao_chans:
+            ao_task.ao_channels.add_ao_voltage_chan(f"{galvo.device}/{chan}")
+        for ch in ai_channels:
+            ai_task.ai_channels.add_ai_voltage_chan(ch)
+
+        # The total number of samples is just len(x_wave)
+        total_samps = len(x_wave)
+
+        # AO timing
+        ao_task.timing.cfg_samp_clk_timing(
+            rate=galvo.rate,
+            sample_mode=AcquisitionType.FINITE,
+            samps_per_chan=total_samps
+        )
+        # AI timing (sample clock from AO)
+        ai_task.timing.cfg_samp_clk_timing(
+            rate=galvo.rate,
+            source=f"/{galvo.device}/ao/SampleClock",
+            sample_mode=AcquisitionType.FINITE,
+            samps_per_chan=total_samps
+        )
+
+        # Write the 2‐channel galvo waveform:
+        # shape must be (num_channels, num_samples)
+        composite_wave = np.vstack([x_wave, y_wave])
+        ao_task.write(composite_wave, auto_start=False)
+
+        # Start tasks
+        ai_task.start()
+        ao_task.start()
+
+        # Wait
+        ao_task.wait_until_done(timeout=total_samps / galvo.rate + 5)
+        ai_task.wait_until_done(timeout=total_samps / galvo.rate + 5)
+
+        # Read
+        acq_data = np.array(ai_task.read(number_of_samples_per_channel=total_samps))
+
+    # Re‐partition the AI data -> final 2D image(s)
+    # pixel_map is shape (num_y, total_x) of integer pixel lengths
+    # We want to sum/average each pixel block in the AI data:
+    n_channels = len(ai_channels)
+    results = []
+
+    # For each AI channel
+    if n_channels == 1:
+        # shape (total_samps,)
+        pixel_values_2d = partition_and_average(acq_data, mask, pixel_map, galvo)
+        # Crop out extrasteps
+        x1 = galvo.extrasteps_left
+        x2 = x1 + galvo.numsteps_x
+        cropped = pixel_values_2d[:, x1:x2]
+        results = [cropped]
+    else:
+        # shape (n_channels, total_samps)
+        for ch_idx in range(n_channels):
+            ch_data = acq_data[ch_idx]
+            pixel_values_2d = partition_and_average(ch_data, mask, pixel_map, galvo)
+            x1 = galvo.extrasteps_left
+            x2 = x1 + galvo.numsteps_x
+            cropped = pixel_values_2d[:, x1:x2]
+            results.append(cropped)
+
+    return results
+
 @staticmethod
 def build_rpoc_wave(mask_image, pixel_samples, total_x, total_y, high_voltage=5.0):
     mask_arr = np.array(mask_image)
@@ -176,6 +257,23 @@ def build_rpoc_wave(mask_image, pixel_samples, total_x, total_y, high_voltage=5.
     ttl_wave = ttl_wave * high_voltage
     ttl_wave = ttl_wave.astype(bool)
     return ttl_wave
+
+@staticmethod
+def partition_and_average(ai_data_1d, mask, pixel_map, galvo):
+    num_y, total_x = pixel_map.shape
+    pixel_values_2d = np.zeros((num_y, total_x), dtype=float)
+
+    cursor = 0
+    for row_idx in range(num_y):
+        for col_idx in range(total_x):
+            samps = pixel_map[row_idx, col_idx]
+            pixel_block = ai_data_1d[cursor:cursor + samps]
+            cursor += samps
+            # average or sum
+            pixel_values_2d[row_idx, col_idx] = np.mean(pixel_block)
+
+    return pixel_values_2d
+
 
 if __name__ == "__main__":
     config = {

@@ -6,7 +6,7 @@ from PIL import Image
 from .rpoc2 import build_rpoc_wave
 
 class Galvo:
-    def __init__(self, config, rpoc_mask=None, rpoc_do_chan=None, **kwargs):
+    def __init__(self, config, rpoc_mask=None, rpoc_do_chan=None, rpoc_mode=None, dwell_multiplier=2.0, **kwargs):
         defaults = {
             "numsteps_x": 400,
             "numsteps_y": 400,
@@ -29,13 +29,18 @@ class Galvo:
 
         self.rpoc_mask = rpoc_mask
         self.rpoc_do_chan = rpoc_do_chan
+        self.rpoc_mode = rpoc_mode  # "standard" or "variable" so far
+        self.dwell_multiplier = dwell_multiplier
 
         self.pixel_samples = max(1, int(self.dwell * self.rate))
         self.total_x = self.numsteps_x + self.extrasteps_left + self.extrasteps_right
         self.total_y = self.numsteps_y
         self.total_samples = self.total_x * self.total_y * self.pixel_samples
 
-        self.waveform = self.gen_raster()
+        if self.rpoc_mode == "variable":
+            self.waveform = None  # or maybe generate it here...
+        else:
+            self.waveform = self.gen_raster()
 
     def gen_raster(self):
         total_rowsamples = self.pixel_samples * self.total_x
@@ -75,3 +80,58 @@ class Galvo:
         composite[0] = x_waveform
 
         return composite
+
+    def gen_variable_waveform(self, mask, dwell_multiplier):
+        dwell = self.dwell
+        rate = self.rate
+        num_y = self.numsteps_y
+        num_x = self.numsteps_x + self.extrasteps_left + self.extrasteps_right
+
+        # We'll define dwell_on = dwell * dwell_multiplier
+        # If mask pixel = True, we use dwell_on. Otherwise dwell_off = dwell.
+        dwell_on = dwell * dwell_multiplier
+        dwell_off = dwell
+
+        # For the "flying" x steps, we want to linearly span offset_x - amp_x to +amp_x, etc.
+        # But we do it pixel by pixel:
+        x_min = self.offset_x - self.amp_x
+        x_max = self.offset_x + self.amp_x
+        # We'll form an array of x positions: e.g. np.linspace(..., num_x, endpoint=False)
+        # so that pixel i is at x_positions[i]
+        x_positions = np.linspace(x_min, x_max, num_x, endpoint=False)
+        # Similarly for y_positions (top row to bottom row):
+        y_positions = np.linspace(self.offset_y + self.amp_y,
+                                self.offset_y - self.amp_y,
+                                num_y)
+
+        # We build lists of samples row by row
+        x_wave_list = []
+        y_wave_list = []
+        pixel_map = np.zeros((num_y, num_x), dtype=int)
+
+        for row_idx in range(num_y):
+            row_y = y_positions[row_idx]
+            for col_idx in range(num_x):
+                # Decide dwell for this pixel
+                if mask[row_idx, col_idx]:
+                    this_dwell = dwell_on
+                else:
+                    this_dwell = dwell_off
+
+                # Number of samples for this pixel
+                pixel_samps = max(1, int(this_dwell * rate))
+
+                # The galvo X remains constant for these pixel_samps
+                x_val = x_positions[col_idx]
+                x_wave_list.append(np.full(pixel_samps, x_val))
+
+                # The galvo Y remains constant for these pixel_samps
+                y_wave_list.append(np.full(pixel_samps, row_y))
+
+                # Store in pixel_map
+                pixel_map[row_idx, col_idx] = pixel_samps
+
+        # Concatenate
+        x_wave = np.concatenate(x_wave_list)
+        y_wave = np.concatenate(y_wave_list)
+        return x_wave, y_wave, pixel_map

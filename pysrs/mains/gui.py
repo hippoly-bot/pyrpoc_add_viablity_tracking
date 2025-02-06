@@ -64,6 +64,8 @@ class GUI:
         self.rpoc_enabled = tk.BooleanVar(value=False)
         self.mask_file_path = tk.StringVar(value="No mask loaded")
         self.zaber_stage = ZaberStage(port=self.config['zaber_chan'])
+        self.rpoc_mode_var = tk.StringVar(value='standard')
+        self.dwell_mult_var = tk.DoubleVar(value=2.0)
 
         self.channel_axes = []
         self.slice_x = []
@@ -161,6 +163,10 @@ class GUI:
                   fieldbackground=[('readonly', '#303030'), ('disabled', '#505050')],
                   foreground=[('readonly', '#AAAAAA'), ('disabled', '#888888')],
                   insertcolor=[('readonly', '#666666'), ('disabled', '#888888')])
+        style.configure('TRadiobutton', background=self.bg_color, foreground=self.fg_color, font=('Calibri', 12))
+        style.map('TRadiobutton',
+                background=[('active', '#4A4A4A')],
+                foreground=[('active', '#D0D0D0')])
 
 
 
@@ -335,14 +341,14 @@ class GUI:
 
 
         ###########################################################
-        #################### 4. RPOC ##############################
+        #################### 4. RPOC (Improved) ###################
         ###########################################################
         self.rpoc_pane = CollapsiblePane(self.sidebar, text='RPOC Masking', gui=self)
         self.rpoc_pane.pack(fill="x", padx=10, pady=5)
 
         self.rpoc_frame = ttk.Frame(self.rpoc_pane.container, padding=(12, 12))
         self.rpoc_frame.grid(row=0, column=0, sticky="nsew")
-        for col in range(3):
+        for col in range(2):
             self.rpoc_frame.columnconfigure(col, weight=1)
 
         self.apply_mask_var = tk.BooleanVar(value=False)
@@ -350,7 +356,7 @@ class GUI:
             self.rpoc_frame, text='Apply RPOC Mask',
             variable=self.apply_mask_var, command=self.toggle_rpoc_fields
         )
-        apply_mask_check.grid(row=0, column=0, columnspan=3, padx=5, pady=5, sticky="w")
+        apply_mask_check.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
 
         loadmask_button = ttk.Button(self.rpoc_frame, text='Load Mask', command=self.update_mask)
         loadmask_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
@@ -366,9 +372,7 @@ class GUI:
         newmask_button = ttk.Button(self.rpoc_frame, text='Create New Mask', command=self.create_mask)
         newmask_button.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
 
-        ttk.Label(self.rpoc_frame, text='Create mask from:').grid(
-            row=3, column=0, columnspan=1, padx=1, pady=1, sticky='e'
-        )
+        ttk.Label(self.rpoc_frame, text='Create mask from:').grid(row=3, column=0, sticky='e', padx=5, pady=5)
         self.rpoc_channel_var = tk.StringVar()
         self.rpoc_channel_entry = ttk.Entry(self.rpoc_frame, textvariable=self.rpoc_channel_var)
         self.rpoc_channel_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
@@ -376,11 +380,43 @@ class GUI:
         self.rpoc_channel_entry.bind("<Return>", self.finalize_selection)
         self.rpoc_channel_entry.bind("<FocusOut>", self.finalize_selection)
 
-        ttk.Label(self.rpoc_frame, text='RPOC DO Line:').grid(row=4, column=0, padx=5, pady=5, sticky='e')
+        ttk.Label(self.rpoc_frame, text='RPOC Mode:').grid(row=4, column=0, sticky='e', padx=5, pady=5)
+        mode_frame = ttk.Frame(self.rpoc_frame)
+        mode_frame.grid(row=4, column=1, sticky='w', padx=5, pady=5)
+
+        self.rpoc_mode_var = tk.StringVar(value="standard")
+
+        rb_standard = ttk.Radiobutton(
+            mode_frame, text='Standard TTL', value='standard',
+            variable=self.rpoc_mode_var, command=self._on_rpoc_mode_changed
+        )
+        rb_standard.pack(anchor="w", padx=5)
+
+        rb_variable = ttk.Radiobutton(
+            mode_frame, text='Variable Dwell', value='variable',
+            variable=self.rpoc_mode_var, command=self._on_rpoc_mode_changed
+        )
+        rb_variable.pack(anchor="w", padx=5)
+
+        self.ttl_frame = ttk.Frame(self.rpoc_frame)
+        self.ttl_frame.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
+
+        ttk.Label(self.ttl_frame, text='DO Line:').pack(side="left", padx=5)
         self.mask_ttl_channel_var = tk.StringVar(value="port0/line5")
-        self.mask_ttl_entry = ttk.Entry(self.rpoc_frame, textvariable=self.mask_ttl_channel_var)
+        self.mask_ttl_entry = ttk.Entry(self.ttl_frame, textvariable=self.mask_ttl_channel_var, width=12)
+        self.mask_ttl_entry.pack(side="left", padx=5)
         self.apply_feedback_to_entry(self.mask_ttl_entry)
-        self.mask_ttl_entry.grid(row=4, column=1, padx=5, pady=5, columnspan=1, sticky='ew')
+
+        self.dwell_frame = ttk.Frame(self.rpoc_frame)
+        self.dwell_frame.grid(row=5, column=1, padx=5, pady=5, sticky="ew")
+
+        ttk.Label(self.dwell_frame, text='Multiplier:').pack(side="left", padx=5)
+        self.dwell_mult_var = tk.DoubleVar(value=2.0)
+        self.dwell_mult_entry = ttk.Entry(self.dwell_frame, textvariable=self.dwell_mult_var, width=8)
+        self.dwell_mult_entry.pack(side="left", padx=5)
+        self.apply_feedback_to_entry(self.dwell_mult_entry)
+
+        self._on_rpoc_mode_changed()
 
 
 
@@ -480,6 +516,15 @@ class GUI:
     ###########################################################
     ##################### GUI BACKEND #########################
     ###########################################################
+    def _on_rpoc_mode_changed(self):
+        if self.rpoc_mode_var.get() == 'standard':
+            self.mask_ttl_entry.configure(state='normal')
+            self.dwell_mult_entry.configure(state='disabled')
+        else:
+            self.mask_ttl_entry.configure(state='disabled')
+            self.dwell_mult_entry.configure(state='normal')
+
+            
     def on_global_click(self, event):
         # helper for clicking out of widgets, makes the GUI more tactile i feel
         if not isinstance(event.widget, tk.Entry):
