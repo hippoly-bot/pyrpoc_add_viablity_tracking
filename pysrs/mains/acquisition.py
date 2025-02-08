@@ -11,32 +11,31 @@ from pysrs.mains.run_image_2d import raster_scan, raster_scan_rpoc, variable_sca
 # TODO: combine scan with acquire method, no need to separate continuous acquisition from the other types
 def start_scan(gui):
     if gui.running:
-        return # this should never get called but if for some reason it does, probably need to elegantly handle the error
+        return  # Prevent multiple concurrent scans
 
-    # FIXME: will change this once i get RPOC actually implemented
     rpoc_mask = None
     rpoc_do_chan = None
-    if gui.rpoc_enabled.get() and gui.apply_mask_var.get():
+
+    if gui.rpoc_enabled.get():  
         if hasattr(gui, 'rpoc_mask') and gui.rpoc_mask is not None:
             rpoc_mask = gui.rpoc_mask
-            rpoc_do_chan = gui.mask_ttl_channel_var.get().strip() 
+            rpoc_do_chan = gui.mask_ttl_channel_var.get().strip()
         else:
             messagebox.showerror("Mask Error", "No valid mask loaded.")
             return
 
     gui.running = True
-
     gui.continuous_button['state'] = 'disabled'
     gui.single_button['state'] = 'disabled'
     gui.stop_button['state'] = 'normal'
 
-    # need to thread the acquisition so the gui still runs smoothly
     threading.Thread(
         target=scan,
         args=(gui,),
         kwargs={'rpoc_mask': rpoc_mask, 'rpoc_do_chan': rpoc_do_chan},
         daemon=True
     ).start()
+
 
 def stop_scan(gui):
     gui.running = False
@@ -54,20 +53,20 @@ def scan(gui, rpoc_mask=None, rpoc_do_chan=None):
             galvo = Galvo(gui.config, 
                           rpoc_mask=rpoc_mask, 
                           rpoc_do_chan=rpoc_do_chan,
-                          rpoc_mode=gui.rpoc_mode_var.get(), # CHATGPT READ THIS: note how this is not yet implemented in gui
-                          dwell_multiplier=gui.dwell_mult_var.get()) # CHATGPT READ THIS: note how this is not yet implemented in GUI
-            
+                          rpoc_mode=gui.rpoc_mode_var.get(),
+                          dwell_multiplier=gui.dwell_mult_var.get())
+
             if gui.simulation_mode.get():
                 data_list = generate_data(len(channels), config=gui.config)
             else:
-                if rpoc_mask is not None:
-                    if gui.rpoc_mode_var.get() == 'standard': # CHATGPT READ THIS: again, not yet implemented in GUI, but I want the mode named 'standard'
+                if gui.rpoc_enabled.get() and rpoc_mask is not None:  # Only apply RPOC if enabled
+                    if gui.rpoc_mode_var.get() == 'standard':
                         data_list = raster_scan_rpoc(channels, galvo, rpoc_mask, do_chan=rpoc_do_chan)
                     elif gui.rpoc_mode_var.get() == 'variable':
-                        data_list = variable_scan_rpoc(channels, galvo, rpoc_mask, dwell_multiplier = gui.dwell_mult_var.get())
+                        data_list = variable_scan_rpoc(channels, galvo, rpoc_mask, dwell_multiplier=gui.dwell_mult_var.get())
                 else:
                     data_list = raster_scan(channels, galvo)
-            
+
             gui.root.after(0, display_data, gui, data_list)
             
     except Exception as e:
@@ -77,6 +76,7 @@ def scan(gui, rpoc_mask=None, rpoc_do_chan=None):
         gui.continuous_button['state'] = 'normal'
         gui.single_button['state'] = 'normal'
         gui.stop_button['state'] = 'disabled'
+
 
 def acquire(gui, startup=False):
     if gui.running and not startup:
@@ -135,38 +135,37 @@ def acquire(gui, startup=False):
         gui.stop_button['state'] = 'disabled'
 
 def acquire_multiple(gui, numshifts):
-    print(f'acquire multiple')
     images = []
     gui.progress_label.config(text=f'(0/{numshifts})')
     gui.root.update_idletasks()
 
     channels = [f"{gui.config['device']}/{ch}" for ch in gui.config['ai_chans']]
-    print(f'chans')
     galvo = Galvo(gui.config)
-    print(f'past config')
 
     for i in range(numshifts):
         if not gui.acquiring:
             break
-
-        if gui.simulation_mode.get():
-            data_list = generate_data(len(channels), config=gui.config)
-        else:
-            if gui.rpoc_mask is not None:
-                if gui.rpoc_mode_var.get() == 'standard': 
-                    data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var.get())
-                elif gui.rpoc_mode_var.get() == 'variable':
-                    data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask, dwell_multiplier = gui.dwell_mult_var.get())
+        try:
+            if gui.simulation_mode.get():
+                data_list = generate_data(len(channels), config=gui.config)
             else:
-                data_list = raster_scan(channels, galvo)
+                if gui.rpoc_mask is not None and gui.rpoc_enabled.get():
+                    if gui.rpoc_mode_var.get() == 'standard': 
+                        data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var.get())
+                    elif gui.rpoc_mode_var.get() == 'variable':
+                        data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask, dwell_multiplier = gui.dwell_mult_var.get())
+                else:
+                    data_list = raster_scan(channels, galvo)
 
-        gui.root.after(0, display_data, gui, data_list)
+            gui.root.after(0, display_data, gui, data_list)
 
-        pil_images = [convert(d) for d in data_list]
-        images.append(pil_images)
+            pil_images = [convert(d) for d in data_list]
+            images.append(pil_images)
 
-        gui.progress_label.config(text=f'({i + 1}/{numshifts})')
-        gui.root.update_idletasks()
+            gui.progress_label.config(text=f'({i + 1}/{numshifts})')
+            gui.root.update_idletasks()
+        except Exception as e:
+            messagebox.showerror('Acquisition Error', f'Error acquiring images: {e}')
 
     return images
 
@@ -201,7 +200,13 @@ def acquire_hyperspectral(gui, numshifts):
         if gui.simulation_mode.get():
             data_list = generate_data(len(channels), config=gui.config)
         else:
-            data_list = raster_scan(channels, galvo)
+            if gui.rpoc_mask is not None:
+                if gui.rpoc_mode_var.get() == 'standard': 
+                    data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var.get())
+                elif gui.rpoc_mode_var.get() == 'variable':
+                    data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask, dwell_multiplier = gui.dwell_mult_var.get())
+            else:
+                data_list = raster_scan(channels, galvo)
         gui.root.after(0, display_data, gui, data_list)
 
         pil_images = [convert(d) for d in data_list]

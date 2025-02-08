@@ -2,6 +2,7 @@ import nidaqmx
 from nidaqmx.constants import AcquisitionType
 import numpy as np
 from PIL import Image
+from tkinter import messagebox
 
 from .rpoc2 import build_rpoc_wave
 
@@ -87,8 +88,10 @@ class Galvo:
         num_y = self.numsteps_y
         num_x = self.numsteps_x + self.extrasteps_left + self.extrasteps_right
 
-        print(np.shape(mask))
-        print(f' numx and numy: {num_x}, {num_y}')
+        mask_shape = np.shape(mask)
+        if mask_shape[1] != num_y or mask_shape[0] != (num_x - self.extrasteps_left - self.extrasteps_right):
+            raise ValueError(f'Error in galvo_funcs.gen_variable_waveform(). Mask is not the right size. Load a mask of dimensions {num_x - self.extrasteps_left - self.extrasteps_right} by {num_y}.')
+
 
         dwell_on = dwell * dwell_multiplier
         dwell_off = dwell

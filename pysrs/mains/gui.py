@@ -352,15 +352,21 @@ class GUI:
         for col in range(2):
             self.rpoc_frame.columnconfigure(col, weight=1)
 
-        self.apply_mask_var = tk.BooleanVar(value=False)
-        apply_mask_check = ttk.Checkbutton(
-            self.rpoc_frame, text='Apply RPOC Mask',
-            variable=self.apply_mask_var, command=self.toggle_rpoc_fields
+        self.show_mask_var = tk.BooleanVar(value=False)
+        show_mask_check = ttk.Checkbutton(
+            self.rpoc_frame, text='Show RPOC Mask',
+            variable=self.show_mask_var, command=self.toggle_rpoc_fields
         )
-        apply_mask_check.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+        show_mask_check.grid(row=6, column=0, columnspan=2, padx=5, pady=5, sticky="w")
 
-        loadmask_button = ttk.Button(self.rpoc_frame, text='Load Mask', command=self.update_mask)
-        loadmask_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+        self.rpoc_enabled = tk.BooleanVar(value=False)
+        activate_rpoc_check = ttk.Checkbutton(
+            self.rpoc_frame, text='Activate RPOC Mask',
+            variable=self.rpoc_enabled,
+            command=self.toggle_rpoc_fields
+        )
+        activate_rpoc_check.grid(row=7, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+
 
         self.mask_status_entry = ttk.Entry(
             self.rpoc_frame, width=20, font=('Calibri', 12),
@@ -369,6 +375,9 @@ class GUI:
         )
         self.apply_feedback_to_entry(self.mask_status_entry)
         self.mask_status_entry.grid(row=1, column=1, padx=5, pady=5, columnspan=1, sticky="ew")
+
+        loadmask_button = ttk.Button(self.rpoc_frame, text='Load Mask', command=self.update_mask)
+        loadmask_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
 
         newmask_button = ttk.Button(self.rpoc_frame, text='Create New Mask', command=self.create_mask)
         newmask_button.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
@@ -777,14 +786,19 @@ class GUI:
             self.continuous_button.configure(state='normal')
 
     def toggle_rpoc_fields(self):
-        if self.apply_mask_var.get():     
+        if self.show_mask_var.get() or self.rpoc_enabled.get(): 
             if not hasattr(self, 'rpoc_mask') or self.rpoc_mask is None:
                 messagebox.showerror("Mask Error", "No valid mask loaded.")
-                self.apply_mask_var.set(False)  
+                self.show_mask_var.set(False)
+                self.rpoc_enabled.set(False)
                 return
-            
+
+        if self.show_mask_var.get():
+            display.display_data(self, self.data)  
+
         if self.data is not None:
             display.display_data(self, self.data)
+
 
 
 

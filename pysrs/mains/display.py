@@ -153,7 +153,7 @@ def display_data(gui, data_list):
     if "mask_handle" not in ch_ax:
             ch_ax["mask_handle"] = None
 
-    if gui.apply_mask_var.get() and hasattr(gui, "rpoc_mask") and gui.rpoc_mask is not None:
+    if gui.show_mask_var.get() and hasattr(gui, "rpoc_mask") and gui.rpoc_mask is not None:
         mask = gui.rpoc_mask
         mask = np.array(mask)
         mask = (mask > 128)
