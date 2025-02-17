@@ -2,6 +2,7 @@ import numpy as np
 import math
 import tkinter as tk
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.colors import ListedColormap
 
 # the axes updating and the dynamic colorbars are wizardry from chatgpt, thanks john AI
 def create_axes(gui, n_channels):
@@ -87,7 +88,7 @@ def display_data(gui, data_list):
                 extent=[x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]],
                 origin='upper',
                 aspect='equal',
-                cmap='magma'
+                cmap=gui.grayred_cmap
             )
             ch_ax["img_handle"] = im
             gui.slice_x[i] = nx // 2
@@ -230,3 +231,16 @@ def on_image_click(gui, event):
 
             display_data(gui, gui.data)
             return
+
+def create_gray_red_cmap():
+    n_colors = 256
+    cmap_data = np.zeros((n_colors, 4))
+
+    for i in range(n_colors - 1):
+        val = i / (n_colors - 1)
+        cmap_data[i, :3] = val  
+        cmap_data[i, 3] = 1.0   # alpha = 1
+
+    cmap_data[-1] = [1.0, 0.0, 0.0, 1.0]
+    
+    return ListedColormap(cmap_data, name="GrayRed")

@@ -13,6 +13,7 @@ from pysrs.mains.utils import Tooltip, generate_data, convert
 from pysrs.mains import acquisition
 from pysrs.mains import calibration
 from pysrs.mains import display
+from pysrs.mains.display import create_gray_red_cmap
 import math
 from pysrs.instruments.prior_stage.prior_stage_movement_test import send_command, wait_for_z_motion
 
@@ -92,6 +93,7 @@ class GUI:
         self.auto_colorbar_vars = {}
         self.fixed_colorbar_vars = {}
         self.fixed_colorbar_widgets = {}
+        self.grayred_cmap = create_gray_red_cmap()
 
         style = ttk.Style()
         style.theme_use('clam')
@@ -107,12 +109,23 @@ class GUI:
         self.update_sidebar_visibility()
         self.root.after(500, self.update_sidebar_visibility)
 
+        self.welcome()
+
         threading.Thread(
             target=acquisition.acquire,
             args=(self,),
             kwargs={"startup": True},
             daemon=True
         ).start()
+
+        
+
+    def welcome(self):
+        messagebox.showinfo('Startup Message',
+            "This software allows you to coordinate and acquire data for Stimulated Raman imaging, as well as RPOC.\n\n"
+            "To collapse any parts of the sidebars, just press the pane title that you do not wish to see, e.g., click 'Delay Stage Settings' to hide it. \n"
+            "Use the sidebar to configure acquisition parameters, and make sure to correctly match the analog input/output channels."
+        )
 
     def update_sidebar_visibility(self):
         panes = [child for child in self.sidebar.winfo_children() if hasattr(child, 'show')]

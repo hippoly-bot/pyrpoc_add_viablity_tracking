@@ -2,6 +2,25 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from PIL import Image, ImageTk, ImageDraw, ImageOps
 import numpy as np
+import random
+
+@staticmethod
+def generate_synthetic_image(width, height, num_cells=10):
+    image = np.full((height, width), 50, dtype=np.float32)
+    Y, X = np.ogrid[:height, :width]
+    for _ in range(num_cells):
+        cx = random.randint(0, width - 1)
+        cy = random.randint(0, height - 1)
+        radius = random.randint(20, 50)
+        mask = (X - cx)**2 + (Y - cy)**2 <= radius**2
+        mask_indices = np.where(mask)
+        distances = np.sqrt((mask_indices[1] - cx)**2 + (mask_indices[0] - cy)**2)
+        cell_intensity = np.clip(255 - 2 * distances, 0, 255)
+        image[mask_indices] = np.maximum(image[mask_indices], cell_intensity)
+    noise = np.random.normal(0, 10, (height, width))
+    image = np.clip(image + noise, 0, 255).astype(np.uint8)
+    image_rgb = np.stack([image, image, image], axis=-1)
+    return image_rgb
 
 
 class RPOC:
@@ -27,15 +46,8 @@ class RPOC:
         style.configure("Dark.TCheckbutton", background=self.bg_color, foreground=self.fg_color)
 
         if image is None: # this doesnt work sadly
-            gradient = np.linspace(0, 255, 800, dtype=np.uint8)
-            gradient = np.tile(gradient, (600, 1, 1))
-            self.original_image = Image.fromarray(
-                np.concatenate([gradient,
-                                255 - gradient,
-                                np.full_like(gradient, 128)],
-                               axis=-1).astype(np.uint8),
-                mode="RGB"
-            )
+            img_arr = generate_synthetic_image(800, 600, num_cells=10)
+            self.original_image = Image.fromarray(img_arr, mode="RGB")
         else:
             if isinstance(image, np.ndarray):
                 image = (255.0 * image / np.max(image)).astype(np.uint8)
@@ -163,17 +175,10 @@ class RPOC:
     def on_threshold_change(self):
         self.lower_threshold = self.lower_slider.get()
         self.upper_threshold = self.upper_slider.get()
-
-        gray = self.get_current_gray()
-        self.mask_np[(gray < self.lower_threshold) | (gray > self.upper_threshold)] = 0
-
         self.update_all_displays()
 
     def on_invert_toggled(self):
         self.invert_mode = self.invert_var.get()
-        gray = self.get_current_gray()
-        self.mask_np[(gray < self.lower_threshold) | (gray > self.upper_threshold)] = 0
-
         self.update_all_displays()
 
     def on_brush_size_change(self, _):
