@@ -8,34 +8,6 @@ from pysrs.mains.display import display_data
 from pysrs.mains.galvo_funcs import Galvo
 from pysrs.mains.run_image_2d import raster_scan, raster_scan_rpoc, variable_scan_rpoc
 
-# TODO: combine scan with acquire method, no need to separate continuous acquisition from the other types
-def start_scan(gui):
-    if gui.running:
-        return  # Prevent multiple concurrent scans
-
-    rpoc_mask = None
-    rpoc_do_chan = None
-
-    if gui.rpoc_enabled.get():  
-        if hasattr(gui, 'rpoc_mask') and gui.rpoc_mask is not None:
-            rpoc_mask = gui.rpoc_mask
-            rpoc_do_chan = gui.mask_ttl_channel_var.get().strip()
-        else:
-            messagebox.showerror("Mask Error", "No valid mask loaded.")
-            return
-
-    gui.running = True
-    gui.continuous_button['state'] = 'disabled'
-    gui.single_button['state'] = 'disabled'
-    gui.stop_button['state'] = 'normal'
-
-    threading.Thread(
-        target=scan,
-        args=(gui,),
-        kwargs={'rpoc_mask': rpoc_mask, 'rpoc_do_chan': rpoc_do_chan},
-        daemon=True
-    ).start()
-
 
 def stop_scan(gui):
     gui.running = False
@@ -44,92 +16,54 @@ def stop_scan(gui):
     gui.single_button['state'] = 'normal'
     gui.stop_button['state'] = 'disabled'
 
-def scan(gui, rpoc_mask=None, rpoc_do_chan=None):
-    try:
-        while gui.running:
-            gui.update_config()
-            channels = [f"{gui.config['device']}/{ch}" for ch in gui.config['ai_chans']]
 
-            galvo = Galvo(gui.config, 
-                          rpoc_mask=rpoc_mask, 
-                          rpoc_do_chan=rpoc_do_chan,
-                          rpoc_mode=gui.rpoc_mode_var.get(),
-                          dwell_multiplier=gui.dwell_mult_var.get())
+def acquire(gui, continuous=False, startup=False):
+    if (gui.running or gui.acquiring) and not startup:
+        return  # Prevent acquisition if already running
 
-            if gui.simulation_mode.get():
-                data_list = generate_data(len(channels), config=gui.config)
-            else:
-                if gui.rpoc_enabled.get() and rpoc_mask is not None:  # Only apply RPOC if enabled
-                    if gui.rpoc_mode_var.get() == 'standard':
-                        data_list = raster_scan_rpoc(channels, galvo, rpoc_mask, do_chan=rpoc_do_chan)
-                    elif gui.rpoc_mode_var.get() == 'variable':
-                        data_list = variable_scan_rpoc(channels, galvo, rpoc_mask, dwell_multiplier=gui.dwell_mult_var.get())
-                else:
-                    data_list = raster_scan(channels, galvo)
-
-            gui.root.after(0, display_data, gui, data_list)
-            
-    except Exception as e:
-        messagebox.showerror('Error', f'Cannot display data: {e}')
-    finally:
-        gui.running = False
-        gui.continuous_button['state'] = 'normal'
-        gui.single_button['state'] = 'normal'
-        gui.stop_button['state'] = 'disabled'
-
-
-def acquire(gui, startup=False):
-    if gui.running and not startup:
-        return  # do nothing if scanning is ongoing
-
+    gui.running = continuous
     gui.acquiring = True
     gui.stop_button['state'] = 'normal'
     gui.continuous_button['state'] = 'disabled'
     gui.single_button['state'] = 'disabled'
 
     try:
-        # 4 cases that all require >= 1 acquisition consecutively
-        gui.update_config()
-        if gui.hyperspectral_enabled.get() and gui.save_acquisitions.get():
-            numshifts_str = gui.entry_numshifts.get().strip()
-            filename = gui.save_file_entry.get().strip()
-            if not filename:
-                messagebox.showerror('Error', 'Please specify a valid TIFF filename.')
-                return
-        elif gui.hyperspectral_enabled.get() and not gui.save_acquisitions.get():
-            numshifts_str = gui.entry_numshifts.get().strip()
-            filename = None
-        elif (not gui.hyperspectral_enabled.get()) and gui.save_acquisitions.get():
-            numshifts_str = gui.save_num_entry.get().strip()
-            filename = gui.save_file_entry.get().strip()
-            if not filename:
-                messagebox.showerror('Error', 'Please specify a valid TIFF filename.')
-                return
-        else:
-            numshifts_str = gui.save_num_entry.get().strip()
-            filename = None
+        while gui.running if continuous else True:
+            gui.update_config()
 
-        # extra error handling is never a bad thing maybe
-        try:
-            numshifts = int(numshifts_str)
-            if numshifts < 1:
-                raise ValueError
-        except ValueError:
-            messagebox.showerror('Error', 'Invalid number of steps.')
-            return
+            hyperspectral = gui.hyperspectral_enabled.get()
+            save = gui.save_acquisitions.get()
+            numshifts_str = (gui.entry_numshifts.get().strip() if hyperspectral else gui.save_num_entry.get().strip())
+            filename = gui.save_file_entry.get().strip() if save else None
 
-        if not gui.hyperspectral_enabled.get():
-            images = acquire_multiple(gui, numshifts)
-            if gui.save_acquisitions.get() and images:
-                save_images(gui, images, filename)
-        else:
-            images = acquire_hyperspectral(gui, numshifts)
-            if gui.save_acquisitions.get() and images:
-                save_images(gui, images, filename)
+            if save and not filename:
+                messagebox.showerror('Error', 'Please specify a valid TIFF filename.')
+                break
+
+            try:
+                numshifts = int(numshifts_str)
+                if numshifts < 1:
+                    raise ValueError
+            except ValueError:
+                messagebox.showerror('Error', 'Invalid number of steps.')
+                break
+
+            try:
+                images = acquire_hyperspectral(gui, numshifts) if hyperspectral else acquire_multiple(gui, numshifts)
+                if save and images:
+                    save_images(gui, images, filename)
+            except Exception as e:
+                if continuous:
+                    gui.running = False 
+                messagebox.showerror('Acquisition Error', f"An error occurred during acquisition:\n{e}")
+                break  
+            if not continuous: 
+                break
     except Exception as e:
-        messagebox.showerror('Error', f'Cannot collect/save data: {e}')
+        messagebox.showerror('Error', f'Cannot collect/save data LINE 60EEE: {e}')
     finally:
         gui.acquiring = False
+        gui.running = False
         gui.continuous_button['state'] = 'normal'
         gui.single_button['state'] = 'normal'
         gui.stop_button['state'] = 'disabled'

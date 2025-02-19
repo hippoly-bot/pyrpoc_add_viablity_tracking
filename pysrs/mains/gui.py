@@ -197,7 +197,7 @@ class GUI:
 
         self.continuous_button = ttk.Button(
             self.control_frame, text='Acq. Continuous',
-            command=lambda: acquisition.start_scan(self)
+            command=lambda: threading.Thread(target=acquisition.acquire, args=(self,), kwargs={'continuous': True}, daemon=True).start()
         )
         self.continuous_button.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
 
@@ -529,7 +529,6 @@ class GUI:
 
         self.canvas.mpl_connect('button_press_event', lambda event: display.on_image_click(self, event))
 
-        # Finally, set initial states
         self.toggle_hyperspectral_fields()
         self.toggle_save_options()
         self.toggle_rpoc_fields()
