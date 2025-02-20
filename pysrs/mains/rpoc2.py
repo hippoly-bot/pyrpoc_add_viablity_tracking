@@ -128,34 +128,34 @@ class RPOC:
         self.eraser_var = tk.BooleanVar(value=self.eraser_mode)
         self.fill_loop_var = tk.BooleanVar(value=self.fill_loop_mode)
 
-        eraser_cb = ttk.Checkbutton(control_frame, text="Eraser",
+        self.eraser_cb = ttk.Checkbutton(control_frame, text="Eraser",
                                     style="Dark.TCheckbutton",
                                     variable=self.eraser_var,
                                     command=self.on_mode_change)
-        eraser_cb.grid(row=1, column=2, padx=5, pady=5)
+        self.eraser_cb.grid(row=1, column=2, padx=5, pady=5)
 
-        fillloop_cb = ttk.Checkbutton(control_frame, text="Fill Loop",
+        self.fillloop_cb = ttk.Checkbutton(control_frame, text="Fill Loop",
                                       style="Dark.TCheckbutton",
                                       variable=self.fill_loop_var,
                                       command=self.on_mode_change)
-        fillloop_cb.grid(row=1, column=3, padx=5, pady=5)
+        self.fillloop_cb.grid(row=1, column=3, padx=5, pady=5)
 
         self.invert_var = tk.BooleanVar(value=False)
-        invert_cb = ttk.Checkbutton(control_frame, text="Invert",
+        self.invert_cb = ttk.Checkbutton(control_frame, text="Invert",
                                     style="Dark.TCheckbutton",
                                     variable=self.invert_var,
                                     command=self.on_invert_toggled)
-        invert_cb.grid(row=2, column=0, padx=5, pady=5)
+        self.invert_cb.grid(row=2, column=0, padx=5, pady=5)
 
-        select_all_btn = ttk.Button(control_frame, text="Select All Active Pixels",
+        self.select_all_btn = ttk.Button(control_frame, text="Select All Active Pixels",
                                     style="Dark.TButton",
                                     command=self.select_all_active)
-        select_all_btn.grid(row=2, column=1, padx=5, pady=5)
+        self.select_all_btn.grid(row=2, column=1, padx=5, pady=5)
 
-        save_mask_btn = ttk.Button(control_frame, text="Save Mask",
+        self.save_mask_btn = ttk.Button(control_frame, text="Save Mask",
                                    style="Dark.TButton",
                                    command=self.save_mask)
-        save_mask_btn.grid(row=2, column=2, padx=5, pady=5, columnspan=2)
+        self.save_mask_btn.grid(row=2, column=2, padx=5, pady=5, columnspan=2)
 
         canvas_frame = ttk.Frame(self.main_frame, style="Dark.TFrame")
         canvas_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=True)
@@ -185,8 +185,21 @@ class RPOC:
         self.brush_size = int(self.brush_slider.get())
 
     def on_mode_change(self):
+        print(f'fill: {self.fill_loop_var.get()}, eraser: {self.eraser_var.get()}')
+        if self.fill_loop_var.get() and self.eraser_var.get():
+            self.fill_loop_var.set(False)
         self.eraser_mode = self.eraser_var.get()
         self.fill_loop_mode = self.fill_loop_var.get()
+
+        # if self.eraser_mode:
+        #     self.fill_loop_var.set(False)
+        #     self.fill_loop_mode = False
+        #     print('fill loop turned off because eraser was on')
+        # if self.fill_loop_mode:
+        #     self.eraser_var.set(False)
+        #     self.eraser_mode = False
+        #     print('eraser turned off because fill loop was on \n')
+        
 
     def select_all_active(self):
         gray_to_use = self.get_current_gray()

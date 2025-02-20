@@ -9,12 +9,11 @@ from PIL import Image
 from pysrs.mains.zaber import ZaberStage
 from pysrs.mains.rpoc2 import RPOC
 from pysrs.mains.widgets import CollapsiblePane, ScrollableFrame
-from pysrs.mains.utils import Tooltip, generate_data, convert
+from pysrs.mains.utils import Tooltip
 from pysrs.mains import acquisition
 from pysrs.mains import calibration
 from pysrs.mains import display
 from pysrs.mains.display import create_gray_red_cmap
-import math
 from pysrs.prior_stage.prior_stage_movement_test import send_command, wait_for_z_motion
 
 BASE_DIR = Path(__file__).resolve().parent.parent
