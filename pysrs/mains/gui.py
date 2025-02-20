@@ -15,7 +15,7 @@ from pysrs.mains import calibration
 from pysrs.mains import display
 from pysrs.mains.display import create_gray_red_cmap
 import math
-from pysrs.instruments.prior_stage.prior_stage_movement_test import send_command, wait_for_z_motion
+from pysrs.prior_stage.prior_stage_movement_test import send_command, wait_for_z_motion
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FOLDERICON_PATH = BASE_DIR / "data" / "folder_icon.png"
