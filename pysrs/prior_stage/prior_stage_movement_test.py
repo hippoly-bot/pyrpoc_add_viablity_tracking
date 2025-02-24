@@ -2,7 +2,7 @@ from ctypes import WinDLL, create_string_buffer
 import os
 import time
 
-DLL_PATH = r"C:\Users\Lab Admin\Documents\PythonStuff\pysrs\pysrs\instruments\prior_stage\PriorScientificSDK.dll"
+DLL_PATH = r"C:\Users\Lab Admin\Documents\PythonStuff\new_pysrs\pysrs\prior_stage\PriorScientificSDK.dll"
 SDKPrior = None
 sessionID = None 
 
