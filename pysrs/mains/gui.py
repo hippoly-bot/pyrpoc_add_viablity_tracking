@@ -616,15 +616,18 @@ class GUI:
             if not (0 <= z_height <= 50000):
                 messagebox.showerror("Value Error", "Z height must be between 0 and 50,000 µm.")
                 return
+            
             ret, response = send_command(f"controller.connect {port}")
             if ret != 0:
                 messagebox.showerror("Connection Error", f"Could not connect to Prior stage on COM{port}")
+
             ret, response = send_command(f"controller.z.goto-position {z_height}")
             if ret != 0:
                 messagebox.showerror("Movement Error", f"Could not move Prior stage to {z_height}")
+
             wait_for_z_motion()
-            _, current_pos = send_command("controller.z.position.get")
-            messagebox.showinfo("Success", f"Moved Prior Stage to {current_pos}.")
+            send_command("controller.disconnect")
+            
         except ValueError:
             messagebox.showerror("Input Error", "Please enter a valid numeric Z height and port.")
 
