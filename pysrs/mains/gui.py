@@ -348,8 +348,18 @@ class GUI:
         self.apply_feedback_to_entry(self.prior_z_entry)
         self.prior_z_entry.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
 
-        self.prior_move_button = ttk.Button(self.prior_stage_frame, text="Move Z", command=self.move_prior_stage)
-        self.prior_move_button.grid(row=2, column=0, columnspan=2, pady=5, sticky="ew")
+        self.prior_move_z_button = ttk.Button(self.prior_stage_frame, text="Move Z", command=self.move_prior_stage_z)
+        self.prior_move_z_button.grid(row=1, column=2, columnspan=1, pady=5, sticky="ew")
+
+        ttk.Label(self.prior_stage_frame, text="Set X Y").grid(row=2, column=0, padx=5, pady=3, sticky="w")
+        self.prior_pos_entry = ttk.Entry(self.prior_stage_frame, width=10)
+        self.apply_feedback_to_entry(self.prior_pos_entry)
+        self.prior_pos_entry.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
+        self.prior_pos_entry.insert(0, "1000, 1000")
+
+        self.prior_move_pos_button = ttk.Button(self.prior_stage_frame, text='Move X Y', command=self.move_prior_stage_xy)
+        self.prior_move_pos_button.grid(row=2, column=2, columnspan=1, pady=5, sticky='ew')
+
 
 
 
@@ -608,7 +618,7 @@ class GUI:
         except Exception as e:
             messagebox.showerror("Stage Move Error", f"Error moving stage: {e}")
 
-    def move_prior_stage(self):
+    def move_prior_stage_z(self):
         # TODO: read the docs, sigh
         try:
             port = int(self.prior_port_entry.get().strip())
@@ -625,12 +635,31 @@ class GUI:
             if ret != 0:
                 messagebox.showerror("Movement Error", f"Could not move Prior stage to {z_height}")
 
-            wait_for_z_motion()
             send_command("controller.disconnect")
             
         except ValueError:
             messagebox.showerror("Input Error", "Please enter a valid numeric Z height and port.")
 
+    def move_prior_stage_xy(self):  
+        try: 
+            port = int(self.prior_port_entry.get().strip())
+            x, y = [int(v) for v in self.prior_pos_entry.get().split(",")]
+            if not (0 <= x <= 50000) or not (0 <= y <= 50000):  
+                messagebox.showerror("Value Error", "X and Y positions must be between 0 and 50,000 µm.")
+                return
+            
+            ret, response = send_command(f"controller.connect {port}")
+            if ret != 0:
+                messagebox.showerror("Connection Error", f"Could not connect to Prior stage on COM{port}")
+            
+            ret, response = send_command(f'controller.stage.goto-position {x} {y}')
+            if ret != 0:
+                messagebox.showerror("Movement Error", f"Could not move Prior stage to {x}, {y}")
+
+            send_command("controller.disconnect")
+            
+        except ValueError:
+            messagebox.showerror("Input Error", "Please enter a valid numeric X and Y position.")
 
 
     ###########################################################

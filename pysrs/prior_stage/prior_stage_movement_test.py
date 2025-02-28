@@ -58,14 +58,14 @@ def wait_for_z_motion():
 
         time.sleep(0.1)  
 
+
 if __name__ == "__main__":
     print("connecting")
     send_command("controller.connect 4")
 
-    send_command(f"controller.z.goto-position 10000") 
-    wait_for_z_motion()  
-    _, current_pos = send_command("controller.z.position.get") 
-    print(f"z pos after move: {current_pos}")
+    send_command("controller.stage.goto-position 1000 1000")
+    # _, current_pos = send_command("controller.z.position.get") 
+    # print(f"z pos after move: {current_pos}")
 
     print("disconnectiong")
     send_command("controller.disconnect")
