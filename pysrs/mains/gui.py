@@ -9,7 +9,7 @@ from PIL import Image
 from pysrs.mains.zaber import ZaberStage
 from pysrs.mains.rpoc2 import RPOC
 from pysrs.mains.widgets import CollapsiblePane, ScrollableFrame
-from pysrs.mains.utils import Tooltip
+from pysrs.mains.utils import Tooltip, FeatureSelection
 from pysrs.mains import acquisition
 from pysrs.mains import calibration
 from pysrs.mains import display
@@ -28,6 +28,17 @@ class GUI:
         self.bg_color = '#3A3A3A'  # or '#2E2E2E'
         self.root.configure(bg=self.bg_color)
 
+        self.feature_config = {
+            'zaber': True,
+            'prior': True,
+            'rpoc': True
+        }
+
+        print(self.feature_config)
+        dialog = FeatureSelection(self.root, self.feature_config)
+        self.root.wait_window(dialog) 
+        print(self.feature_config)
+        
         self.simulation_mode = tk.BooleanVar(value=True)
         self.running = False
         self.acquiring = False
@@ -108,7 +119,7 @@ class GUI:
         self.update_sidebar_visibility()
         self.root.after(500, self.update_sidebar_visibility)
 
-        self.welcome()
+        # self.welcome() # feature selection popup means i can probably not use this 
 
         threading.Thread(
             target=acquisition.acquire,
@@ -143,6 +154,8 @@ class GUI:
             self.root.update_idletasks()
         except Exception as e:
             print("Error updating sidebar visibility:", e)
+
+
 
     def create_widgets(self):
         self.bg_color = '#2E2E2E'
@@ -180,6 +193,39 @@ class GUI:
         style.map('TRadiobutton',
                 background=[('active', '#4A4A4A')],
                 foreground=[('active', '#D0D0D0')])
+        
+        # need to set the placeholders for all the possible conditionally created widgets
+        self.delay_pane = None
+        self.delay_stage_frame = None
+        self.zaber_port_entry = None
+        self.delay_hyperspec_checkbutton = None
+        self.entry_start_um = None
+        self.entry_stop_um = None
+        self.entry_single_um = None
+        self.entry_numshifts = None
+        self.calibrate_button = None
+        self.movestage_button = None
+
+        self.prior_pane = None
+        self.prior_stage_frame = None
+        self.prior_port_entry = None
+        self.prior_z_entry = None
+        self.prior_move_button = None
+
+        self.rpoc_pane = None
+        self.rpoc_frame = None
+        self.show_mask_var = None
+        self.rpoc_enabled = None
+        self.mask_status_entry = None
+        self.rpoc_channel_var = None
+        self.rpoc_channel_entry = None
+        self.rpoc_mode_var = None
+        self.ttl_frame = None
+        self.mask_ttl_channel_var = None
+        self.mask_ttl_entry = None
+        self.dwell_frame = None
+        self.dwell_mult_var = None
+        self.dwell_mult_entry = None
 
 
 
@@ -259,186 +305,189 @@ class GUI:
         ###########################################################
         #################### ZABER DELAY ##########################
         ###########################################################
-        self.delay_pane = CollapsiblePane(self.sidebar, text='Delay Stage Settings', gui=self)
-        self.delay_pane.pack(fill="x", padx=10, pady=5)
+        if self.feature_config['zaber']:
+            self.delay_pane = CollapsiblePane(self.sidebar, text='Delay Stage Settings', gui=self)
+            self.delay_pane.pack(fill="x", padx=10, pady=5)
 
-        self.delay_stage_frame = ttk.Frame(self.delay_pane.container, padding=(12, 12))
-        self.delay_stage_frame.grid(row=0, column=0, sticky="nsew")
+            self.delay_stage_frame = ttk.Frame(self.delay_pane.container, padding=(12, 12))
+            self.delay_stage_frame.grid(row=0, column=0, sticky="nsew")
 
-        for col in range(3):
-            self.delay_stage_frame.columnconfigure(col, weight=1)
+            for col in range(3):
+                self.delay_stage_frame.columnconfigure(col, weight=1)
 
-        ttk.Label(self.delay_stage_frame, text="Zaber Port (COM #)").grid(
-            row=0, column=0, padx=5, pady=3, sticky="w"
-        )
-        self.zaber_port_entry = ttk.Entry(self.delay_stage_frame, width=10)
-        self.zaber_port_entry.insert(0, self.config['zaber_chan'])
-        self.zaber_port_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
+            ttk.Label(self.delay_stage_frame, text="Zaber Port (COM #)").grid(
+                row=0, column=0, padx=5, pady=3, sticky="w"
+            )
+            self.zaber_port_entry = ttk.Entry(self.delay_stage_frame, width=10)
+            self.zaber_port_entry.insert(0, self.config['zaber_chan'])
+            self.zaber_port_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
 
-        self.zaber_port_entry.bind("<FocusOut>", self._on_zaber_port_changed)
-        self.zaber_port_entry.bind("<Return>", self._on_zaber_port_changed)
+            self.zaber_port_entry.bind("<FocusOut>", self._on_zaber_port_changed)
+            self.zaber_port_entry.bind("<Return>", self._on_zaber_port_changed)
 
-        self.delay_hyperspec_checkbutton = ttk.Checkbutton(
-            self.delay_stage_frame, text='Enable Hyperspectral Scanning',
-            variable=self.hyperspectral_enabled, command=self.toggle_hyperspectral_fields
-        )
-        self.delay_hyperspec_checkbutton.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky='w')
+            self.delay_hyperspec_checkbutton = ttk.Checkbutton(
+                self.delay_stage_frame, text='Enable Hyperspectral Scanning',
+                variable=self.hyperspectral_enabled, command=self.toggle_hyperspectral_fields
+            )
+            self.delay_hyperspec_checkbutton.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky='w')
 
-        ttk.Label(self.delay_stage_frame, text="Start (µm)").grid(row=2, column=0, sticky="w", padx=5, pady=3)
-        self.entry_start_um = ttk.Entry(self.delay_stage_frame, width=10)
-        self.entry_start_um.insert(0, str(self.hyper_config['start_um']))
-        self.apply_feedback_to_entry(self.entry_start_um)
-        self.entry_start_um.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
+            ttk.Label(self.delay_stage_frame, text="Start (µm)").grid(row=2, column=0, sticky="w", padx=5, pady=3)
+            self.entry_start_um = ttk.Entry(self.delay_stage_frame, width=10)
+            self.entry_start_um.insert(0, str(self.hyper_config['start_um']))
+            self.apply_feedback_to_entry(self.entry_start_um)
+            self.entry_start_um.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
 
-        ttk.Label(self.delay_stage_frame, text="Stop (µm)").grid(row=3, column=0, sticky="w", padx=5, pady=3)
-        self.entry_stop_um = ttk.Entry(self.delay_stage_frame, width=10)
-        self.entry_stop_um.insert(0, str(self.hyper_config['stop_um']))
-        self.apply_feedback_to_entry(self.entry_stop_um)
-        self.entry_stop_um.grid(row=3, column=1, padx=5, pady=3, sticky="ew")
+            ttk.Label(self.delay_stage_frame, text="Stop (µm)").grid(row=3, column=0, sticky="w", padx=5, pady=3)
+            self.entry_stop_um = ttk.Entry(self.delay_stage_frame, width=10)
+            self.entry_stop_um.insert(0, str(self.hyper_config['stop_um']))
+            self.apply_feedback_to_entry(self.entry_stop_um)
+            self.entry_stop_um.grid(row=3, column=1, padx=5, pady=3, sticky="ew")
 
-        ttk.Label(self.delay_stage_frame, text="Single Delay (µm)").grid(row=4, column=0, sticky="w", padx=5, pady=3)
-        self.entry_single_um = ttk.Entry(self.delay_stage_frame, width=10)
-        self.entry_single_um.insert(0, str(self.hyper_config['single_um']))
-        self.apply_feedback_to_entry(self.entry_single_um)
-        self.entry_single_um.grid(row=4, column=1, padx=5, pady=3, sticky="ew")
-        self.entry_single_um.bind('<Return>', self.single_delay_changed)
-        self.entry_single_um.bind('<FocusOut>', self.single_delay_changed)
+            ttk.Label(self.delay_stage_frame, text="Single Delay (µm)").grid(row=4, column=0, sticky="w", padx=5, pady=3)
+            self.entry_single_um = ttk.Entry(self.delay_stage_frame, width=10)
+            self.entry_single_um.insert(0, str(self.hyper_config['single_um']))
+            self.apply_feedback_to_entry(self.entry_single_um)
+            self.entry_single_um.grid(row=4, column=1, padx=5, pady=3, sticky="ew")
+            self.entry_single_um.bind('<Return>', self.single_delay_changed)
+            self.entry_single_um.bind('<FocusOut>', self.single_delay_changed)
 
-        ttk.Label(self.delay_stage_frame, text="Number of Shifts").grid(row=5, column=0, sticky="w", padx=5, pady=3)
-        self.entry_numshifts = ttk.Entry(self.delay_stage_frame, width=10)
-        self.apply_feedback_to_entry(self.entry_numshifts)
-        self.entry_numshifts.insert(0, '10')
-        self.entry_numshifts.grid(row=5, column=1, padx=5, pady=3, sticky="ew")
+            ttk.Label(self.delay_stage_frame, text="Number of Shifts").grid(row=5, column=0, sticky="w", padx=5, pady=3)
+            self.entry_numshifts = ttk.Entry(self.delay_stage_frame, width=10)
+            self.apply_feedback_to_entry(self.entry_numshifts)
+            self.entry_numshifts.insert(0, '10')
+            self.entry_numshifts.grid(row=5, column=1, padx=5, pady=3, sticky="ew")
 
-        self.calibrate_button = ttk.Button(
-            self.delay_stage_frame, text='Calibrate',
-            command=lambda: calibration.calibrate_stage(self)
-        )
-        self.calibrate_button.grid(row=6, column=0, padx=5, pady=10, sticky='ew')
+            self.calibrate_button = ttk.Button(
+                self.delay_stage_frame, text='Calibrate',
+                command=lambda: calibration.calibrate_stage(self)
+            )
+            self.calibrate_button.grid(row=6, column=0, padx=5, pady=10, sticky='ew')
 
-        self.movestage_button = ttk.Button(
-            self.delay_stage_frame, text='Move Stage',
-            command=self.force_zaber
-        )
-        self.movestage_button.grid(row=6, column=1, padx=5, pady=10, sticky='ew')
+            self.movestage_button = ttk.Button(
+                self.delay_stage_frame, text='Move Stage',
+                command=self.force_zaber
+            )
+            self.movestage_button.grid(row=6, column=1, padx=5, pady=10, sticky='ew')
 
 
 
         ###########################################################
         #################### 3. PRIOR STAGE #######################
         ###########################################################
-        self.prior_pane = CollapsiblePane(self.sidebar, text='Prior Stage Settings', gui=self)
-        self.prior_pane.pack(fill="x", padx=10, pady=5)
+        if self.feature_config['prior']:
+            self.prior_pane = CollapsiblePane(self.sidebar, text='Prior Stage Settings', gui=self)
+            self.prior_pane.pack(fill="x", padx=10, pady=5)
 
-        self.prior_stage_frame = ttk.Frame(self.prior_pane.container, padding=(12, 12))
-        self.prior_stage_frame.grid(row=0, column=0, sticky="nsew")
-        for col in range(3):
-            self.prior_stage_frame.columnconfigure(col, weight=1)
+            self.prior_stage_frame = ttk.Frame(self.prior_pane.container, padding=(12, 12))
+            self.prior_stage_frame.grid(row=0, column=0, sticky="nsew")
+            for col in range(3):
+                self.prior_stage_frame.columnconfigure(col, weight=1)
 
-        ttk.Label(self.prior_stage_frame, text="Port (COM #)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
-        self.prior_port_entry = ttk.Entry(self.prior_stage_frame, width=10)
-        self.prior_port_entry.insert(0, "4")
-        self.prior_port_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
-        self.apply_feedback_to_entry(self.prior_port_entry)
-        self.prior_port_entry.bind("<FocusOut>", self._on_prior_port_changed)
-        self.prior_port_entry.bind("<Return>", self._on_prior_port_changed)
+            ttk.Label(self.prior_stage_frame, text="Port (COM #)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
+            self.prior_port_entry = ttk.Entry(self.prior_stage_frame, width=10)
+            self.prior_port_entry.insert(0, "4")
+            self.prior_port_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
+            self.apply_feedback_to_entry(self.prior_port_entry)
+            self.prior_port_entry.bind("<FocusOut>", self._on_prior_port_changed)
+            self.prior_port_entry.bind("<Return>", self._on_prior_port_changed)
 
-        ttk.Label(self.prior_stage_frame, text="Set Z Height (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="w")
-        self.prior_z_entry = ttk.Entry(self.prior_stage_frame, width=10)
-        self.apply_feedback_to_entry(self.prior_z_entry)
-        self.prior_z_entry.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
+            ttk.Label(self.prior_stage_frame, text="Set Z Height (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="w")
+            self.prior_z_entry = ttk.Entry(self.prior_stage_frame, width=10)
+            self.apply_feedback_to_entry(self.prior_z_entry)
+            self.prior_z_entry.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
 
-        self.prior_move_button = ttk.Button(self.prior_stage_frame, text="Move Z", command=self.move_prior_stage)
-        self.prior_move_button.grid(row=2, column=0, columnspan=2, pady=5, sticky="ew")
+            self.prior_move_button = ttk.Button(self.prior_stage_frame, text="Move Z", command=self.move_prior_stage)
+            self.prior_move_button.grid(row=2, column=0, columnspan=2, pady=5, sticky="ew")
 
 
 
         ###########################################################
-        #################### 4. RPOC (Improved) ###################
+        #################### 4. RPOC ##############################
         ###########################################################
-        self.rpoc_pane = CollapsiblePane(self.sidebar, text='RPOC Masking', gui=self)
-        self.rpoc_pane.pack(fill="x", padx=10, pady=5)
+        if self.feature_config['rpoc']:
+            self.rpoc_pane = CollapsiblePane(self.sidebar, text='RPOC Masking', gui=self)
+            self.rpoc_pane.pack(fill="x", padx=10, pady=5)
 
-        self.rpoc_frame = ttk.Frame(self.rpoc_pane.container, padding=(12, 12))
-        self.rpoc_frame.grid(row=0, column=0, sticky="nsew")
-        for col in range(2):
-            self.rpoc_frame.columnconfigure(col, weight=1)
+            self.rpoc_frame = ttk.Frame(self.rpoc_pane.container, padding=(12, 12))
+            self.rpoc_frame.grid(row=0, column=0, sticky="nsew")
+            for col in range(2):
+                self.rpoc_frame.columnconfigure(col, weight=1)
 
-        self.show_mask_var = tk.BooleanVar(value=False)
-        show_mask_check = ttk.Checkbutton(
-            self.rpoc_frame, text='Show RPOC Mask',
-            variable=self.show_mask_var, command=self.toggle_rpoc_fields
-        )
-        show_mask_check.grid(row=6, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+            self.show_mask_var = tk.BooleanVar(value=False)
+            show_mask_check = ttk.Checkbutton(
+                self.rpoc_frame, text='Show RPOC Mask',
+                variable=self.show_mask_var, command=self.toggle_rpoc_fields
+            )
+            show_mask_check.grid(row=6, column=0, columnspan=2, padx=5, pady=5, sticky="w")
 
-        self.rpoc_enabled = tk.BooleanVar(value=False)
-        activate_rpoc_check = ttk.Checkbutton(
-            self.rpoc_frame, text='Activate RPOC Mask',
-            variable=self.rpoc_enabled,
-            command=self.toggle_rpoc_fields
-        )
-        activate_rpoc_check.grid(row=7, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+            self.rpoc_enabled = tk.BooleanVar(value=False)
+            activate_rpoc_check = ttk.Checkbutton(
+                self.rpoc_frame, text='Activate RPOC Mask',
+                variable=self.rpoc_enabled,
+                command=self.toggle_rpoc_fields
+            )
+            activate_rpoc_check.grid(row=7, column=0, columnspan=2, padx=5, pady=5, sticky="w")
 
 
-        self.mask_status_entry = ttk.Entry(
-            self.rpoc_frame, width=20, font=('Calibri', 12),
-            justify="center", textvariable=self.mask_file_path,
-            state="readonly"
-        )
-        self.apply_feedback_to_entry(self.mask_status_entry)
-        self.mask_status_entry.grid(row=1, column=1, padx=5, pady=5, columnspan=1, sticky="ew")
+            self.mask_status_entry = ttk.Entry(
+                self.rpoc_frame, width=20, font=('Calibri', 12),
+                justify="center", textvariable=self.mask_file_path,
+                state="readonly"
+            )
+            self.apply_feedback_to_entry(self.mask_status_entry)
+            self.mask_status_entry.grid(row=1, column=1, padx=5, pady=5, columnspan=1, sticky="ew")
 
-        loadmask_button = ttk.Button(self.rpoc_frame, text='Load Mask', command=self.update_mask)
-        loadmask_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+            loadmask_button = ttk.Button(self.rpoc_frame, text='Load Mask', command=self.update_mask)
+            loadmask_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
 
-        newmask_button = ttk.Button(self.rpoc_frame, text='Create New Mask', command=self.create_mask)
-        newmask_button.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
+            newmask_button = ttk.Button(self.rpoc_frame, text='Create New Mask', command=self.create_mask)
+            newmask_button.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
 
-        ttk.Label(self.rpoc_frame, text='Create mask from:').grid(row=3, column=0, sticky='e', padx=5, pady=5)
-        self.rpoc_channel_var = tk.StringVar()
-        self.rpoc_channel_entry = ttk.Entry(self.rpoc_frame, textvariable=self.rpoc_channel_var)
-        self.rpoc_channel_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
-        self.apply_feedback_to_entry(self.rpoc_channel_entry)
-        self.rpoc_channel_entry.bind("<Return>", self.finalize_selection)
-        self.rpoc_channel_entry.bind("<FocusOut>", self.finalize_selection)
+            ttk.Label(self.rpoc_frame, text='Create mask from:').grid(row=3, column=0, sticky='e', padx=5, pady=5)
+            self.rpoc_channel_var = tk.StringVar()
+            self.rpoc_channel_entry = ttk.Entry(self.rpoc_frame, textvariable=self.rpoc_channel_var)
+            self.rpoc_channel_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+            self.apply_feedback_to_entry(self.rpoc_channel_entry)
+            self.rpoc_channel_entry.bind("<Return>", self.finalize_selection)
+            self.rpoc_channel_entry.bind("<FocusOut>", self.finalize_selection)
 
-        ttk.Label(self.rpoc_frame, text='RPOC Mode:').grid(row=4, column=0, sticky='e', padx=5, pady=5)
-        mode_frame = ttk.Frame(self.rpoc_frame)
-        mode_frame.grid(row=4, column=1, sticky='w', padx=5, pady=5)
+            ttk.Label(self.rpoc_frame, text='RPOC Mode:').grid(row=4, column=0, sticky='e', padx=5, pady=5)
+            mode_frame = ttk.Frame(self.rpoc_frame)
+            mode_frame.grid(row=4, column=1, sticky='w', padx=5, pady=5)
 
-        self.rpoc_mode_var = tk.StringVar(value="standard")
+            self.rpoc_mode_var = tk.StringVar(value="standard")
 
-        rb_standard = ttk.Radiobutton(
-            mode_frame, text='Standard TTL', value='standard',
-            variable=self.rpoc_mode_var, command=self._on_rpoc_mode_changed
-        )
-        rb_standard.pack(anchor="w", padx=5)
+            rb_standard = ttk.Radiobutton(
+                mode_frame, text='Standard TTL', value='standard',
+                variable=self.rpoc_mode_var, command=self._on_rpoc_mode_changed
+            )
+            rb_standard.pack(anchor="w", padx=5)
 
-        rb_variable = ttk.Radiobutton(
-            mode_frame, text='Variable Dwell', value='variable',
-            variable=self.rpoc_mode_var, command=self._on_rpoc_mode_changed
-        )
-        rb_variable.pack(anchor="w", padx=5)
+            rb_variable = ttk.Radiobutton(
+                mode_frame, text='Variable Dwell', value='variable',
+                variable=self.rpoc_mode_var, command=self._on_rpoc_mode_changed
+            )
+            rb_variable.pack(anchor="w", padx=5)
 
-        self.ttl_frame = ttk.Frame(self.rpoc_frame)
-        self.ttl_frame.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
+            self.ttl_frame = ttk.Frame(self.rpoc_frame)
+            self.ttl_frame.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
 
-        ttk.Label(self.ttl_frame, text='DO Line:').pack(side="left", padx=5)
-        self.mask_ttl_channel_var = tk.StringVar(value="port0/line5")
-        self.mask_ttl_entry = ttk.Entry(self.ttl_frame, textvariable=self.mask_ttl_channel_var, width=12)
-        self.mask_ttl_entry.pack(side="left", padx=5)
-        self.apply_feedback_to_entry(self.mask_ttl_entry)
+            ttk.Label(self.ttl_frame, text='DO Line:').pack(side="left", padx=5)
+            self.mask_ttl_channel_var = tk.StringVar(value="port0/line5")
+            self.mask_ttl_entry = ttk.Entry(self.ttl_frame, textvariable=self.mask_ttl_channel_var, width=12)
+            self.mask_ttl_entry.pack(side="left", padx=5)
+            self.apply_feedback_to_entry(self.mask_ttl_entry)
 
-        self.dwell_frame = ttk.Frame(self.rpoc_frame)
-        self.dwell_frame.grid(row=5, column=1, padx=5, pady=5, sticky="ew")
+            self.dwell_frame = ttk.Frame(self.rpoc_frame)
+            self.dwell_frame.grid(row=5, column=1, padx=5, pady=5, sticky="ew")
 
-        ttk.Label(self.dwell_frame, text='Multiplier:').pack(side="left", padx=5)
-        self.dwell_mult_var = tk.DoubleVar(value=2.0)
-        self.dwell_mult_entry = ttk.Entry(self.dwell_frame, textvariable=self.dwell_mult_var, width=8)
-        self.dwell_mult_entry.pack(side="left", padx=5)
-        self.apply_feedback_to_entry(self.dwell_mult_entry)
+            ttk.Label(self.dwell_frame, text='Multiplier:').pack(side="left", padx=5)
+            self.dwell_mult_var = tk.DoubleVar(value=2.0)
+            self.dwell_mult_entry = ttk.Entry(self.dwell_frame, textvariable=self.dwell_mult_var, width=8)
+            self.dwell_mult_entry.pack(side="left", padx=5)
+            self.apply_feedback_to_entry(self.dwell_mult_entry)
 
-        self._on_rpoc_mode_changed()
+            self._on_rpoc_mode_changed()
 
 
 

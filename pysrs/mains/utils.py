@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import ttk
 import numpy as np
 from PIL import Image
 
@@ -56,6 +57,55 @@ def generate_data(num_channels=1, config=None):
                     arr[y, x] = 1.0
         data_list.append(arr)
     return data_list
+
+import tkinter as tk
+from tkinter import ttk
+
+class FeatureSelection(tk.Toplevel): 
+    def __init__(self, master, feature_config): # lucky me, dictionaries are mutable by reference apparently
+        super().__init__(master)
+        self.title("Select Features")
+        self.transient(master) 
+        self.grab_set()        
+
+        self.feature_config = feature_config # pass around the gui feature_config without passing the whole gui
+        self.result = None     
+
+        ttk.Label(self, text="Select which components you want to enable:").grid(
+            row=0, column=0, columnspan=2, padx=10, pady=10, sticky="w"
+        )
+
+        # TODO: add more, dont forget
+        self.zaber_var = tk.BooleanVar(value=True)
+        self.prior_var = tk.BooleanVar(value=True)
+        self.rpoc_var  = tk.BooleanVar(value=True)
+
+        row_index = 1
+        ttk.Checkbutton(self, text="Zaber Delay Stage", variable=self.zaber_var).grid(
+            row=row_index, column=0, sticky="w", padx=20
+        )
+        row_index += 1
+        ttk.Checkbutton(self, text="Prior Stage", variable=self.prior_var).grid(
+            row=row_index, column=0, sticky="w", padx=20
+        )
+        row_index += 1
+        ttk.Checkbutton(self, text="RPOC Masking", variable=self.rpoc_var).grid(
+            row=row_index, column=0, sticky="w", padx=20
+        )
+
+        row_index += 1
+        ok_button = ttk.Button(self, text="OK", command=self.ok)
+        ok_button.grid(row=row_index, column=0, columnspan=2, pady=10)
+
+        self.protocol("WM_DELETE_WINDOW", self.ok) # make sure closing the window does the same thing as pressing
+
+    def ok(self):
+        self.feature_config["zaber"] = self.zaber_var.get()
+        self.feature_config["prior"] = self.prior_var.get()
+        self.feature_config['rpoc'] = self.rpoc_var.get()
+
+        self.destroy()
+
 
 def convert(data, type_=np.uint8):
     data_flipped = np.flipud(data)
