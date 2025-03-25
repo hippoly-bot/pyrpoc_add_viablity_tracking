@@ -4,7 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks, TransferFunction, bode, step
 from scipy.optimize import curve_fit
-
+import pyvisa as pv
+import time
 
 
 config = {
@@ -66,6 +67,46 @@ def fit_second_order_step(t, response, step_amplitude):
     popt, _ = curve_fit(model, t, response_normalized, bounds=(0, [10, 1000, 1]))
     return popt 
 
+def acquire_response_oscilloscope(ao_channel, waveform, rate, scope_resource):
+    total_samples = len(waveform)
+
+    with nidaqmx.Task() as ao_task:
+        ao_task.ao_channels.add_ao_voltage_chan(ao_channel)
+        ao_task.timing.cfg_samp_clk_timing(
+            rate=rate,
+            sample_mode=AcquisitionType.FINITE,
+            samps_per_chan=total_samples
+        )
+
+        ao_task.write(waveform, auto_start=False)
+        ao_task.start()
+        ao_task.wait_until_done()
+
+    rm = pv.ResourceManager()
+    scope = rm.open_resource(scope_resource)
+    scope.timeout = 5000 
+
+    time.sleep(0.5)
+
+    # figure out the right commands here
+    scope.write(":ACQuire:STATE STOP")
+    scope.write(":DATa:SOUrce CH1")
+    scope.write(":DATa:ENCdg ASCII") # binary will be faster
+    scope.write(":DATa:WIDth 1")  
+
+    scope.write(":ACQuire:STATE RUN")
+    time.sleep(1.0)  
+
+    raw_data = scope.query(":CURVe?")
+    
+    str_values = raw_data.strip().split(',')
+    scope_voltage = np.array(str_values, dtype=float)
+    dt = float(scope.query(":WFMPRE:XINCR?"))
+    t0 = float(scope.query(":WFMPRE:XZERO?"))
+    
+    scope_time = t0 + dt * np.arange(len(scope_voltage))
+    return scope_time, scope_voltage
+
 
 def plot_raw(t, command, response): 
     plt.figure(figsize=(12, 8))
@@ -108,13 +149,6 @@ if __name__ == '__main__':
     response_wave = acquire_response(config['ao_channel'], config['ai_channel'], command_wave, config['rate'])
 
     plot_raw(t, command_wave, response_wave)
-
-
-
-
-
-
-
 
     # transfer_params = fit_second_order_step(t, response_wave, config['step_amplitude'])
 
