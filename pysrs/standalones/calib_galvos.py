@@ -67,8 +67,49 @@ def fit_second_order_step(t, response, step_amplitude):
     popt, _ = curve_fit(model, t, response_normalized, bounds=(0, [10, 1000, 1]))
     return popt 
 
+import nidaqmx
+from nidaqmx.constants import AcquisitionType
+import numpy as np
+import pyvisa as pv
+import time
+
 def acquire_response_oscilloscope(ao_channel, waveform, rate, scope_resource):
+    """
+    1) Configures Tektronix TBS2000B scope for single acquisition of CH1 & CH2.
+    2) Starts the scope.
+    3) Outputs the waveform on the specified NI-DAQ channel.
+    4) Waits for completion, then reads waveform data from both channels.
+    
+    Returns
+    -------
+    (t_ch1, v_ch1), (t_ch2, v_ch2) : tuple of np.ndarrays
+        Time and voltage arrays for channels 1 and 2, respectively.
+    """
+
     total_samples = len(waveform)
+
+    # ------------------------------------------------------
+    # 1) Open the scope connection & configure single capture
+    # ------------------------------------------------------
+    rm = pv.ResourceManager()
+    scope = rm.open_resource(scope_resource)
+    scope.timeout = 5000 
+
+    scope.write(":ACQUIRE:STATE STOP")
+
+    scope.write(":CLEAR")
+
+    scope.write(":ACQUIRE:STOPAFTER SEQ")
+
+    scope.write(":TRIGGER:MAIn:EDGE:SOURCE CH1")
+    scope.write(":TRIGGER:MAIn:EDGE:SLOpe RISing")
+
+    scope.write(":DATA:ENCdg ASCII")
+    scope.write(":DATA:WIDTH 1") 
+
+    scope.write(":ACQUIRE:STATE RUN")
+
+    time.sleep(0.2)
 
     with nidaqmx.Task() as ao_task:
         ao_task.ao_channels.add_ao_voltage_chan(ao_channel)
@@ -82,30 +123,30 @@ def acquire_response_oscilloscope(ao_channel, waveform, rate, scope_resource):
         ao_task.start()
         ao_task.wait_until_done()
 
-    rm = pv.ResourceManager()
-    scope = rm.open_resource(scope_resource)
-    scope.timeout = 5000 
-
     time.sleep(0.5)
 
-    # figure out the right commands here
-    scope.write(":ACQuire:STATE STOP")
-    scope.write(":DATa:SOUrce CH1")
-    scope.write(":DATa:ENCdg ASCII") # binary will be faster
-    scope.write(":DATa:WIDth 1")  
+    scope.write(":DATA:SOURCE CH1")
+    raw_data_ch1 = scope.query(":CURVe?")
+    ch1_values = raw_data_ch1.strip().split(',')
+    v_ch1 = np.array(ch1_values, dtype=float)
 
-    scope.write(":ACQuire:STATE RUN")
-    time.sleep(1.0)  
+    dt_ch1 = float(scope.query(":WFMPRE:XINCR?"))
+    t0_ch1 = float(scope.query(":WFMPRE:XZERO?"))
+    n_ch1 = len(v_ch1)
+    t_ch1 = t0_ch1 + dt_ch1 * np.arange(n_ch1)
 
-    raw_data = scope.query(":CURVe?")
-    
-    str_values = raw_data.strip().split(',')
-    scope_voltage = np.array(str_values, dtype=float)
-    dt = float(scope.query(":WFMPRE:XINCR?"))
-    t0 = float(scope.query(":WFMPRE:XZERO?"))
-    
-    scope_time = t0 + dt * np.arange(len(scope_voltage))
-    return scope_time, scope_voltage
+    scope.write(":DATA:SOURCE CH2")
+    raw_data_ch2 = scope.query(":CURVe?")
+    ch2_values = raw_data_ch2.strip().split(',')
+    v_ch2 = np.array(ch2_values, dtype=float)
+
+    dt_ch2 = float(scope.query(":WFMPRE:XINCR?"))
+    t0_ch2 = float(scope.query(":WFMPRE:XZERO?"))
+    n_ch2 = len(v_ch2)
+    t_ch2 = t0_ch2 + dt_ch2 * np.arange(n_ch2)
+
+    return (t_ch1, v_ch1), (t_ch2, v_ch2)
+
 
 
 def plot_raw(t, command, response): 
@@ -145,26 +186,43 @@ def plot_fitted(t, command, response, transfer_params):
     plt.show()
 
 if __name__ == '__main__':
-   rm = pv.ResourceManager()
+    import matplotlib.pyplot as plt
+    t, command_wave = generate_waveform(config['test_type'], config['duration'], config['rate'])
+    scope_resource_str = "USB0::0x0699::0x03A6::C010101::INSTR" 
+    (t_ch1, v_ch1), (t_ch2, v_ch2) = acquire_response_oscilloscope(
+        config['ao_channel'],
+        command_wave,
+        config['rate'],
+        scope_resource=scope_resource_str
+    )
 
-   # tektronix oscilloscope is 'USB0::0x0699::0x03C7::C010691::INSTR', make sure to have the 0
-   instr = rm.open_resource('USB0::0x0699::0x03C7::C010691::INSTR')
-   print(f'IDN response: {instr.query('*IDN?')}')
-   print(f'ID response: {instr.query('ID?')}')
+    plt.figure()
+    plt.plot(t_ch1, v_ch1, color='black', label='CH1')
+    plt.plot(t_ch2, v_ch2, color='red', label='CH2')
+    plt.legend()
+    plt.show()
 
-   t, command_wave = generate_waveform(config['test_type'], config['duration'], config['rate'])
-   response_wave = acquire_response_oscilloscope(config['ao_channel'], command_wave, config['rate'], 'USB0::0x0699::0x03C7::C010691::INSTR')
-   plot_raw(t, command_wave, response_wave)
+
+# if __name__ == '__main__':
+#     rm = pv.ResourceManager()
+
+#     # tektronix oscilloscope is 'USB0::0x0699::0x03C7::C010691::INSTR', make sure to have the 0
+#     instr = rm.open_resource('USB0::0x0699::0x03C7::C010691::INSTR')
+#     print(f'IDN response: {instr.query('*IDN?')}')
+#     print(f'ID response: {instr.query('ID?')}')
+
+#     t, command_wave = generate_waveform(config['test_type'], config['duration'], config['rate'])
+#     response_wave = acquire_response_oscilloscope(config['ao_channel'], command_wave, config['rate'], 'USB0::0x0699::0x03C7::C010691::INSTR')
+#     plot_raw(t, command_wave, response_wave)
+#     response_wave = acquire_response(config['ao_channel'], config['ai_channel'], command_wave, config['rate'])
+
+#     plot_raw(t, command_wave, response_wave)
+
+#     transfer_params = fit_second_order_step(t, response_wave, config['step_amplitude'])
+
+#     plot_fitted(t, command_wave, response_wave, transfer_params)
     
-    # response_wave = acquire_response(config['ao_channel'], config['ai_channel'], command_wave, config['rate'])
-
-    # plot_raw(t, command_wave, response_wave)
-
-    # # transfer_params = fit_second_order_step(t, response_wave, config['step_amplitude'])
-
-    # # plot_fitted(t, command_wave, response_wave, transfer_params)
-    
-    # # print('\nparams')
-    # # print(f'    gain K: {transfer_params[0]}')
-    # # print(f'    nat freq wn: {transfer_params[1]}')
-    # # print(f'    damping zeta: {transfer_params[2]}')
+#     print('\nparams')
+#     print(f'    gain K: {transfer_params[0]}')
+#     print(f'    nat freq wn: {transfer_params[1]}')
+#     print(f'    damping zeta: {transfer_params[2]}')
