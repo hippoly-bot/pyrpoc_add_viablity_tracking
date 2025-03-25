@@ -9,7 +9,7 @@ import time
 
 
 config = {
-    'ao_channel': 'Dev1/ao0',    
+    'ao_channel': 'Dev1/ao1',    
     'ai_channel': 'Dev1/ai3',   
     'rate': 1e6,                 
     'duration': 2,            
@@ -145,16 +145,26 @@ def plot_fitted(t, command, response, transfer_params):
     plt.show()
 
 if __name__ == '__main__':
-    t, command_wave = generate_waveform(config['test_type'], config['duration'], config['rate'])
-    response_wave = acquire_response(config['ao_channel'], config['ai_channel'], command_wave, config['rate'])
+   rm = pv.ResourceManager()
 
-    plot_raw(t, command_wave, response_wave)
+   # tektronix oscilloscope is 'USB0::0x0699::0x03C7::C010691::INSTR', make sure to have the 0
+   instr = rm.open_resource('USB0::0x0699::0x03C7::C010691::INSTR')
+   print(f'IDN response: {instr.query('*IDN?')}')
+   print(f'ID response: {instr.query('ID?')}')
 
-    # transfer_params = fit_second_order_step(t, response_wave, config['step_amplitude'])
-
-    # plot_fitted(t, command_wave, response_wave, transfer_params)
+   t, command_wave = generate_waveform(config['test_type'], config['duration'], config['rate'])
+   response_wave = acquire_response_oscilloscope(config['ao_channel'], command_wave, config['rate'], 'USB0::0x0699::0x03C7::C010691::INSTR')
+   plot_raw(t, command_wave, response_wave)
     
-    # print('\nparams')
-    # print(f'    gain K: {transfer_params[0]}')
-    # print(f'    nat freq wn: {transfer_params[1]}')
-    # print(f'    damping zeta: {transfer_params[2]}')
+    # response_wave = acquire_response(config['ao_channel'], config['ai_channel'], command_wave, config['rate'])
+
+    # plot_raw(t, command_wave, response_wave)
+
+    # # transfer_params = fit_second_order_step(t, response_wave, config['step_amplitude'])
+
+    # # plot_fitted(t, command_wave, response_wave, transfer_params)
+    
+    # # print('\nparams')
+    # # print(f'    gain K: {transfer_params[0]}')
+    # # print(f'    nat freq wn: {transfer_params[1]}')
+    # # print(f'    damping zeta: {transfer_params[2]}')
