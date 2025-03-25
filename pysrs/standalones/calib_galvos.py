@@ -67,30 +67,9 @@ def fit_second_order_step(t, response, step_amplitude):
     popt, _ = curve_fit(model, t, response_normalized, bounds=(0, [10, 1000, 1]))
     return popt 
 
-import nidaqmx
-from nidaqmx.constants import AcquisitionType
-import numpy as np
-import pyvisa as pv
-import time
 
 def acquire_response_oscilloscope(ao_channel, waveform, rate, scope_resource):
-    """
-    1) Configures Tektronix TBS2000B scope for single acquisition of CH1 & CH2.
-    2) Starts the scope.
-    3) Outputs the waveform on the specified NI-DAQ channel.
-    4) Waits for completion, then reads waveform data from both channels.
-    
-    Returns
-    -------
-    (t_ch1, v_ch1), (t_ch2, v_ch2) : tuple of np.ndarrays
-        Time and voltage arrays for channels 1 and 2, respectively.
-    """
-
     total_samples = len(waveform)
-
-    # ------------------------------------------------------
-    # 1) Open the scope connection & configure single capture
-    # ------------------------------------------------------
     rm = pv.ResourceManager()
     scope = rm.open_resource(scope_resource)
     scope.timeout = 5000 
@@ -188,7 +167,7 @@ def plot_fitted(t, command, response, transfer_params):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     t, command_wave = generate_waveform(config['test_type'], config['duration'], config['rate'])
-    scope_resource_str = "USB0::0x0699::0x03A6::C010101::INSTR" 
+    scope_resource_str = "USB0::0x0699::0x03C7::C010691::INSTR" 
     (t_ch1, v_ch1), (t_ch2, v_ch2) = acquire_response_oscilloscope(
         config['ao_channel'],
         command_wave,
