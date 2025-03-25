@@ -9,15 +9,15 @@ from scipy.optimize import curve_fit
 
 config = {
     'ao_channel': 'Dev1/ao0',    
-    'ai_channel': 'Dev1/ai0',   
-    'rate': 10000,                
-    'duration': 2.0,            
-    'test_type': 'step',
+    'ai_channel': 'Dev1/ai3',   
+    'rate': 1e6,                 
+    'duration': 2,            
+    'test_type': 'sine',
     'step_amplitude': 0.5,
     'ramp_amplitude': 0.5,   
     'sine_amplitude': 0.3,   
     'sine_frequency': 10,          
-    'save_plots': True,           
+    'save_plots': False,           
 }
 
 
@@ -28,10 +28,10 @@ def generate_waveform(test_type, duration, rate):
         waveform[:len(t)//2] = 0
     elif test_type == 'ramp':
         waveform = np.linspace(0, config['ramp_amplitude'], len(t))
-    elif test_type == 'sinusoidal':
+    elif test_type == 'sine':
         waveform = config['sine_amplitude'] * np.sin(2 * np.pi * config['sine_frequency'] * t)
     else:
-        raise ValueError('Invalid test_type. Choose "step", "ramp", or "sinusoidal".')
+        raise ValueError('Invalid test_type. Choose "step", "ramp", or "sinesine".')
     return t, waveform
 
 def acquire_response(ao_channel, ai_channel, waveform, rate):
@@ -51,8 +51,8 @@ def acquire_response(ao_channel, ai_channel, waveform, rate):
         ao_task.write(waveform, auto_start=False)
         ai_task.start()
         ao_task.start()
-        ao_task.wait_until_done(timeout=10)
-        ai_task.wait_until_done(timeout=10)
+        ao_task.wait_until_done() # dont forget to add kwarg timeout if needed
+        ai_task.wait_until_done()
         response = ai_task.read(number_of_samples_per_channel=total_samples)
     return np.array(response)
 
@@ -69,8 +69,7 @@ def fit_second_order_step(t, response, step_amplitude):
 
 def plot_raw(t, command, response): 
     plt.figure(figsize=(12, 8))
-    plt.subplot(2, 1, 1)
-    plt.plot(t, command, 'k--', label='Command Signal')
+    plt.plot(t, command, '--k', label='Command Signal', alpha=0.3)
     plt.plot(t, response, 'b', label='Measured Position')
     plt.xlabel('Time (s)')
     plt.ylabel('Voltage (V)')
@@ -110,11 +109,18 @@ if __name__ == '__main__':
 
     plot_raw(t, command_wave, response_wave)
 
-    transfer_params = fit_second_order_step(t, response_wave, config['step_amplitude'])
 
-    plot_fitted(t, command_wave, response_wave, transfer_params)
+
+
+
+
+
+
+    # transfer_params = fit_second_order_step(t, response_wave, config['step_amplitude'])
+
+    # plot_fitted(t, command_wave, response_wave, transfer_params)
     
-    print('\nparams')
-    print(f'    gain K: {transfer_params[0]}')
-    print(f'    nat freq wn: {transfer_params[1]}')
-    print(f'    damping zeta: {transfer_params[2]}')
+    # print('\nparams')
+    # print(f'    gain K: {transfer_params[0]}')
+    # print(f'    nat freq wn: {transfer_params[1]}')
+    # print(f'    damping zeta: {transfer_params[2]}')
