@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 ao_channel = 'Dev1/ao0'
 step_amplitude = 1.0
-duration = 0.1 
+duration = 2
 rate = 100000  
 osc_resource = 'USB0::0x0699::0x03C7::C010691::INSTR'
 
@@ -37,7 +37,9 @@ raw_wave = scope.query('WAVFrm?')
 x_incr = float(scope.query('WFMOutpre:XINcr?'))
 x_zero = float(scope.query('WFMOutpre:XZEro?'))
 num_pts = int(scope.query('WFMOutpre:NR_Pt?'))
-wave_data = np.array([float(val) for val in raw_wave.strip().split(',')])
+
+print(raw_wave)
+wave_data = np.array([float(val) for val in raw_wave.strip().split(';')])
 time_axis = x_zero + x_incr * np.arange(len(wave_data))
 
 def step_response(t, K, wn, zeta):
