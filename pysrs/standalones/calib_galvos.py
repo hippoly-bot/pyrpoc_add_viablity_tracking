@@ -12,7 +12,7 @@ config = {
     'ao_channel': 'Dev1/ao1',    
     'ai_channel': 'Dev1/ai3',   
     'rate': 1e6,                 
-    'duration': 2,            
+    'duration': 1,            
     'test_type': 'sine',
     'step_amplitude': 0.5,
     'ramp_amplitude': 0.5,   
