@@ -7,24 +7,29 @@ import re
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
 
-ao_channel = 'Dev1/ao0'
-step_amplitude = 1.0    
-duration = 2         
-rate = 100000            
+ao_channel = 'Dev1/ao1'
+step_amplitude = 0.2  
+duration = 0.01      
+rate = 1000000            
 osc_resource = 'USB0::0x0699::0x03C7::C010691::INSTR'
-vertical_scale = 0.5    
+vertical_scale = 100E-3  
 vertical_offset = 0.0
 
 num_samples = int(duration * rate)
 t_wave = np.linspace(0, duration, num_samples, endpoint=False)
 waveform = np.ones(num_samples) * step_amplitude
 
+plt.plot(waveform)
+plt.show()
+
 rm = pyvisa.ResourceManager()
 scope = rm.open_resource(osc_resource)
 scope.write('*CLS')
 for ch in range(1, 5):
-    scope.write(f"CH{ch}:SCAle {vertical_scale}")
-    scope.write(f"CH{ch}:OFFSet {vertical_offset}")
+    scope.write(f"CH{ch}:SCALE {vertical_scale}")
+    scope.write(f"CH{ch}:OFFSET {vertical_offset}")
+    print(scope.query(f"CH{ch}:OFFSET?"))
+scope.write('HORIZONTAL:SCALE 2e-6')
 scope.write('ACQuire:STOPAfter SEQ')
 scope.write('TRIGger:A:EDGE:SOURCE CH1')
 scope.write('TRIGger:A:EDGE:SLOPe RIS')
