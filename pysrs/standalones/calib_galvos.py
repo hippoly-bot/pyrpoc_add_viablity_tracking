@@ -119,6 +119,7 @@ def plot_raw(t, command, response):
 
     plt.show()
 
+'''oscilloscope main'''
 if __name__ == '__main__':
     t, command_wave = generate_waveform(config['test_type'], config['duration'], config['rate'])
     scope_resource_str = "USB0::0x0699::0x03C7::C010691::INSTR" 
@@ -135,18 +136,18 @@ if __name__ == '__main__':
     plt.legend()
     plt.show()
 
+'''DAQ main'''
+if __name__ == '__main__':
+    rm = pv.ResourceManager()
 
-# if __name__ == '__main__':
-#     rm = pv.ResourceManager()
+    # tektronix oscilloscope is 'USB0::0x0699::0x03C7::C010691::INSTR', make sure to have the 0
+    instr = rm.open_resource('USB0::0x0699::0x03C7::C010691::INSTR')
+    print(f'IDN response: {instr.query('*IDN?')}')
+    print(f'ID response: {instr.query('ID?')}')
 
-#     # tektronix oscilloscope is 'USB0::0x0699::0x03C7::C010691::INSTR', make sure to have the 0
-#     instr = rm.open_resource('USB0::0x0699::0x03C7::C010691::INSTR')
-#     print(f'IDN response: {instr.query('*IDN?')}')
-#     print(f'ID response: {instr.query('ID?')}')
+    t, command_wave = generate_waveform(config['test_type'], config['duration'], config['rate'])
+    # response_wave = acquire_response_oscilloscope(config['ao_channel'], command_wave, config['rate'], 'USB0::0x0699::0x03C7::C010691::INSTR')
+    # plot_raw(t, command_wave, response_wave)
+    response_wave = acquire_response(config['ao_channel'], config['ai_channel'], command_wave, config['rate'])
 
-#     t, command_wave = generate_waveform(config['test_type'], config['duration'], config['rate'])
-#     response_wave = acquire_response_oscilloscope(config['ao_channel'], command_wave, config['rate'], 'USB0::0x0699::0x03C7::C010691::INSTR')
-#     plot_raw(t, command_wave, response_wave)
-#     response_wave = acquire_response(config['ao_channel'], config['ai_channel'], command_wave, config['rate'])
-
-#     plot_raw(t, command_wave, response_wave)
+    plot_raw(t, command_wave, response_wave)
