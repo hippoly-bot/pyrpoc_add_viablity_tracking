@@ -7,10 +7,10 @@ import re
 import matplotlib.pyplot as plt
 
 ao_channel = 'Dev1/ao1'
-amp = 0.2
+amp = 0.1
 freq = 2000
-duration = 0.01
-rate = 1000000
+duration = 0.2
+rate = 10000
 osc_resource = 'USB0::0x0699::0x03C7::C010691::INSTR'
 
 t = np.linspace(0, duration, int(duration * rate), endpoint=False)
@@ -19,15 +19,21 @@ waveform = amp * np.sin(2 * np.pi * freq * t)
 rm = pyvisa.ResourceManager()
 scope = rm.open_resource(osc_resource)
 scope.write('*CLS')
-for ch in range(1, 5):
-    scope.write(f"CH{ch}:SCALE 100E-3")
-    scope.write(f"CH{ch}:OFFSET 0")
-scope.write('HORIZONTAL:SCALE 1e-3')
+scope.write('ACQuire:STATE OFF')
 scope.write('ACQuire:STOPAfter SEQ')
+scope.write('TRIGger:A:MODe NORM')
 scope.write('TRIGger:A:EDGE:SOURCE CH1')
 scope.write('TRIGger:A:EDGE:SLOPe RIS')
 scope.write(f'TRIGger:A:LEVel {amp/2}')
+scope.write('HORIZONTAL:SCALE 1e-4')
+
+for ch in range(1, 5):
+    scope.write(f"CH{ch}:SCALE 50E-3")
+    scope.write(f"CH{ch}:POSITION 0")
+
 scope.write('ACQuire:STATE ON')
+
+time.sleep(0.2)
 
 with nidaqmx.Task() as ao_task:
     ao_task.ao_channels.add_ao_voltage_chan(ao_channel)
@@ -36,7 +42,7 @@ with nidaqmx.Task() as ao_task:
     ao_task.start()
     ao_task.wait_until_done()
 
-time.sleep(0.1)
+time.sleep(0.3)
 
 def parse_waveform(raw_str):
     nums = re.findall(r"[-+]?\d*\.\d+(?:[eE][-+]?\d+)?|[-+]?\d+", raw_str)
@@ -57,6 +63,8 @@ for ch in range(1, 5):
     t_axis = x_zero + x_incr * np.arange(len(wave))
     waveforms[f"CH{ch}"] = wave
     time_axes[f"CH{ch}"] = t_axis
+
+scope.write('ACQuire:STATE OFF')
 
 plt.figure(figsize=(12, 8))
 for ch in range(1, 5):
