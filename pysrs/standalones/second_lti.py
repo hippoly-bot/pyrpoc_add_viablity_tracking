@@ -11,14 +11,14 @@ from scipy.interpolate import interp1d
 import warnings
 warnings.filterwarnings("ignore")
 
-ao_channel = 'Dev1/ao1'
+ao_channel = 'Dev1/ao0'
 step_amplitude = 0.5
 duration = 0.01
 rate = 1000000
 osc_resource = 'USB0::0x0699::0x03C7::C010691::INSTR'
 vertical_scale = 2000E-3
 horizontal_scale = 1e-4
-num_repeats = 100
+num_repeats = 10
 
 num_samples = int(duration * rate)
 waveform = np.zeros(num_samples)
