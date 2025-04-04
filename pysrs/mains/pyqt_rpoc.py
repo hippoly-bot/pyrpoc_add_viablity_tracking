@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem,
     QHBoxLayout, QCheckBox, QLabel, QMenu, QGraphicsTextItem, QGraphicsDropShadowEffect, QGraphicsEllipseItem
 )
-from PyQt5.QtGui import QPixmap, QPainterPath, QPen, QBrush, QPainter, QFont, QColor
+from PyQt5.QtGui import QPixmap, QPainterPath, QPen, QBrush, QPainter, QFont, QColor, QPalette
 from PyQt5.QtCore import Qt, QPointF, QRectF, QPoint, QVariant, QPoint
 
 
@@ -220,6 +220,26 @@ class ImageViewer(QGraphicsView):
         return QColor(r, g, b)
 
 
+def set_dark_theme(app):
+    app.setStyle("Fusion")
+    dark_palette = app.palette()
+
+    dark_palette.setColor(QPalette.Window, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.WindowText, Qt.white)
+    dark_palette.setColor(QPalette.Base, QColor(35, 35, 35))
+    dark_palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ToolTipBase, Qt.white)
+    dark_palette.setColor(QPalette.ToolTipText, Qt.white)
+    dark_palette.setColor(QPalette.Text, Qt.white)
+    dark_palette.setColor(QPalette.Button, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ButtonText, Qt.white)
+    dark_palette.setColor(QPalette.BrightText, Qt.red)
+    dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+    dark_palette.setColor(QPalette.HighlightedText, Qt.black)
+
+    app.setPalette(dark_palette)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -316,9 +336,10 @@ class MainWindow(QMainWindow):
             path = roi.path()
             points = path.toSubpathPolygons()[0]
             viewer.add_roi_to_table(i + 1, points)
-
+            
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    set_dark_theme(app)  # Apply dark mode
     window = MainWindow()
     window.resize(1200, 800)
     window.show()
