@@ -22,7 +22,7 @@ FOLDERICON_PATH = BASE_DIR / "data" / "folder_icon.png"
 class GUI:
     def __init__(self, root):
         self.root = root
-        self.root.title('Stimulated Raman Coordinator')
+        self.root.title('New Software')
         self.root.geometry('1200x800')
 
         self.bg_color = '#3A3A3A'  # or '#2E2E2E'
@@ -39,19 +39,19 @@ class GUI:
         self.config = {
             'device': 'Dev1',
             'ao_chans': ['ao1', 'ao0'],
-            'ai_chans': ['ai1'],
-            'channel_names': ['ai1'],
+            'ai_chans': ['ai0', 'ai1'],
+            'channel_names': ['AI0: MT - 505 nm', 'AI1: Dye - 642 nm'],
             'zaber_chan': 'COM3',
-            'amp_x': 0.5,
-            'amp_y': 0.5,
-            'offset_x': 0.0,
-            'offset_y': 0.0,
-            'rate': 1e5,
-            'numsteps_x': 200,
-            'numsteps_y': 200,
-            'extrasteps_left': 50,
-            'extrasteps_right': 50,
-            'dwell': 1e-5
+            'amp_x': 0.75,
+            'amp_y': 0.75,
+            'offset_x': 0.5,
+            'offset_y': 0.4,
+            'rate': 1e6,
+            'numsteps_x': 512,
+            'numsteps_y': 512,
+            'extrasteps_left': 100,
+            'extrasteps_right': 20,
+            'dwell': 5e-6
         }
         self.param_entries = {}
 
@@ -257,7 +257,72 @@ class GUI:
         browse_button.grid(row=0, column=1, padx=5)
 
         ###########################################################
-        #################### ZABER DELAY ##########################
+        #################### 2. PARAM ENTRY ##########################
+        ###########################################################
+        self.param_pane = CollapsiblePane(self.sidebar, text='Parameters', gui=self)
+        self.param_pane.pack(fill="x", padx=10, pady=5)
+
+        self.param_frame = ttk.Frame(self.param_pane.container, padding=(0, 0))
+        self.param_frame.grid(row=0, column=0, sticky="ew")
+
+        param_groups = [
+            ('Device', 'device'), ('Amp X', 'amp_x'), ('Amp Y', 'amp_y'),
+            ('Offset X', 'offset_x'), ('Offset Y', 'offset_y'),
+            ('AO Chans', 'ao_chans'), ('Steps X', 'numsteps_x'), ('Steps Y', 'numsteps_y'),
+            ('Extra Steps Left', 'extrasteps_left'), ('Extra Steps Right', 'extrasteps_right'),
+            ('AI Chans', 'ai_chans'), ('Sampling Rate (Hz)', 'rate'), ('Dwell Time (us)', 'dwell'),
+            ('Input Names', 'channel_names')
+        ]
+        num_cols = 3
+        for index, (label_text, key) in enumerate(param_groups):
+            row = (index // num_cols) * 2
+            col = index % num_cols
+            ttk.Label(self.param_frame, text=label_text).grid(row=row, column=col, padx=5, pady=(5, 0), sticky='w')
+            entry = ttk.Entry(self.param_frame, width=18)
+            if key in ['ao_chans', 'ai_chans', 'channel_names']:
+                entry.insert(0, ",".join(self.config[key]))
+            else:
+                entry.insert(0, str(self.config[key]))
+            entry.grid(row=row+1, column=col, padx=5, pady=(0, 5), sticky='ew')
+            self.param_entries[key] = entry
+            self.param_frame.columnconfigure(col, weight=1)
+
+            entry.bind("<FocusOut>", lambda e: self.update_config())
+            entry.bind("<Return>", lambda e: self.update_config())
+
+        self.info_frame = ttk.Frame(self.param_frame)
+        self.info_frame.grid(row=0, column=0, columnspan=1, sticky="ew")
+        self.info_frame.grid_propagate(False)
+
+        info_button_param = ttk.Label(self.info_frame, text='ⓘ', foreground=self.highlight_color,
+                                      cursor='hand2', font=bold_font)
+        info_button_param.pack(side="left", padx=5, pady=(0, 2))
+
+        galvo_tooltip_text = (
+            "• Device: NI-DAQ device (e.g., 'Dev1')\n"
+            "• AO Chans, AI Chans\n"
+            "• Amp X/Y + Offset X/Y\n"
+            "• Steps X/Y + Extra Steps\n"
+            "• Rate, Dwell, Input Names\n"
+            "No quotes needed; separate multiple channels by commas."
+        )
+        Tooltip(info_button_param, galvo_tooltip_text)
+
+
+
+        ###########################################################
+        ######### 3. COLORBARS (create_colorbar_settings()) ##########
+        ###########################################################
+        self.cb_pane = CollapsiblePane(self.sidebar, text="Colorbar Settings", gui=self)
+        self.cb_pane.pack(fill="x", padx=10, pady=5)
+
+        self.cb_frame = ttk.Frame(self.cb_pane.container, padding=(12, 12))
+        self.cb_frame.grid(row=0, column=0, sticky="ew")
+        self.create_colorbar_settings()
+
+
+        ###########################################################
+        #################### 4. ZABER DELAY ##########################
         ###########################################################
         self.delay_pane = CollapsiblePane(self.sidebar, text='Delay Stage Settings', gui=self)
         self.delay_pane.pack(fill="x", padx=10, pady=5)
@@ -325,7 +390,7 @@ class GUI:
 
 
         ###########################################################
-        #################### 3. PRIOR STAGE #######################
+        #################### 5. PRIOR STAGE #######################
         ###########################################################
         self.prior_pane = CollapsiblePane(self.sidebar, text='Prior Stage Settings', gui=self)
         self.prior_pane.pack(fill="x", padx=10, pady=5)
@@ -364,7 +429,7 @@ class GUI:
 
 
         ###########################################################
-        #################### 4. RPOC (Improved) ###################
+        #################### 6. RPOC ###################
         ###########################################################
         self.rpoc_pane = CollapsiblePane(self.sidebar, text='RPOC Masking', gui=self)
         self.rpoc_pane.pack(fill="x", padx=10, pady=5)
@@ -452,69 +517,7 @@ class GUI:
 
 
 
-        ###########################################################
-        #################### PARAM ENTRY ##########################
-        ###########################################################
-        self.param_pane = CollapsiblePane(self.sidebar, text='Parameters', gui=self)
-        self.param_pane.pack(fill="x", padx=10, pady=5)
-
-        self.param_frame = ttk.Frame(self.param_pane.container, padding=(0, 0))
-        self.param_frame.grid(row=0, column=0, sticky="ew")
-
-        param_groups = [
-            ('Device', 'device'), ('Amp X', 'amp_x'), ('Amp Y', 'amp_y'),
-            ('Offset X', 'offset_x'), ('Offset Y', 'offset_y'),
-            ('AO Chans', 'ao_chans'), ('Steps X', 'numsteps_x'), ('Steps Y', 'numsteps_y'),
-            ('Extra Steps Left', 'extrasteps_left'), ('Extra Steps Right', 'extrasteps_right'),
-            ('AI Chans', 'ai_chans'), ('Sampling Rate (Hz)', 'rate'), ('Dwell Time (us)', 'dwell'),
-            ('Input Names', 'channel_names')
-        ]
-        num_cols = 3
-        for index, (label_text, key) in enumerate(param_groups):
-            row = (index // num_cols) * 2
-            col = index % num_cols
-            ttk.Label(self.param_frame, text=label_text).grid(row=row, column=col, padx=5, pady=(5, 0), sticky='w')
-            entry = ttk.Entry(self.param_frame, width=18)
-            if key in ['ao_chans', 'ai_chans', 'channel_names']:
-                entry.insert(0, ",".join(self.config[key]))
-            else:
-                entry.insert(0, str(self.config[key]))
-            entry.grid(row=row+1, column=col, padx=5, pady=(0, 5), sticky='ew')
-            self.param_entries[key] = entry
-            self.param_frame.columnconfigure(col, weight=1)
-
-            entry.bind("<FocusOut>", lambda e: self.update_config())
-            entry.bind("<Return>", lambda e: self.update_config())
-
-        self.info_frame = ttk.Frame(self.param_frame)
-        self.info_frame.grid(row=0, column=0, columnspan=1, sticky="ew")
-        self.info_frame.grid_propagate(False)
-
-        info_button_param = ttk.Label(self.info_frame, text='ⓘ', foreground=self.highlight_color,
-                                      cursor='hand2', font=bold_font)
-        info_button_param.pack(side="left", padx=5, pady=(0, 2))
-
-        galvo_tooltip_text = (
-            "• Device: NI-DAQ device (e.g., 'Dev1')\n"
-            "• AO Chans, AI Chans\n"
-            "• Amp X/Y + Offset X/Y\n"
-            "• Steps X/Y + Extra Steps\n"
-            "• Rate, Dwell, Input Names\n"
-            "No quotes needed; separate multiple channels by commas."
-        )
-        Tooltip(info_button_param, galvo_tooltip_text)
-
-
-
-        ###########################################################
-        ######### COLORBARS (create_colorbar_settings()) ##########
-        ###########################################################
-        self.cb_pane = CollapsiblePane(self.sidebar, text="Colorbar Settings", gui=self)
-        self.cb_pane.pack(fill="x", padx=10, pady=5)
-
-        self.cb_frame = ttk.Frame(self.cb_pane.container, padding=(12, 12))
-        self.cb_frame.grid(row=0, column=0, sticky="ew")
-        self.create_colorbar_settings()
+        
 
 
 
