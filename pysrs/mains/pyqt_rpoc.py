@@ -36,6 +36,7 @@ class ImageViewer(QGraphicsView):
 
         self.drawing = False
         self.current_path = None
+        self.temp_path_item = None
         self.current_points = []
         self.show_rois = True
         self.show_labels = True  # toggled by N
@@ -43,6 +44,14 @@ class ImageViewer(QGraphicsView):
         self.roi_label_items = []# parallel list of QGraphicsTextItem
         self.path_pen = QPen(Qt.red, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         self.roi_opacity = 0.4
+
+        self.brush_radius = 3
+        self.cursor_brush = QGraphicsEllipseItem(0, 0, self.brush_radius * 2, self.brush_radius * 2)
+        self.cursor_brush.setBrush(QBrush(Qt.blue))
+        self.cursor_brush.setPen(QPen(Qt.NoPen))
+        self.cursor_brush.setZValue(1000)  # Always on top
+        self.cursor_brush.setVisible(False)
+        self.scene().addItem(self.cursor_brush)
 
     def wheelEvent(self, event):
         zoom_in_factor = 1.25
