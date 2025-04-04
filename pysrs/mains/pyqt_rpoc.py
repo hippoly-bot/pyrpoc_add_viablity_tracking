@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QFileDialog,
     QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
     QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem,
-    QHBoxLayout, QCheckBox, QLabel, QMenu, QGraphicsTextItem, QGraphicsDropShadowEffect
+    QHBoxLayout, QCheckBox, QLabel, QMenu, QGraphicsTextItem, QGraphicsDropShadowEffect, QGraphicsEllipseItem
 )
 from PyQt5.QtGui import QPixmap, QPainterPath, QPen, QBrush, QPainter, QFont, QColor
 from PyQt5.QtCore import Qt, QPointF, QRectF, QPoint, QVariant, QPoint
