@@ -14,7 +14,7 @@ from pysrs.mains import acquisition
 from pysrs.helpers import calibration
 from pysrs.mains import display
 from pysrs.mains.display import create_gray_red_cmap
-from pysrs.prior_stage.prior_stage_movement_test import send_command, wait_for_z_motion
+from pysrs.helpers.prior_stage import functions as prior
 from pysrs.mains.pyqt_rpoc import launch_pyqt_editor
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -426,6 +426,14 @@ class GUI:
         self.prior_move_pos_button = ttk.Button(self.prior_stage_frame, text='Move X Y', command=self.move_prior_stage_xy)
         self.prior_move_pos_button.grid(row=2, column=2, columnspan=1, pady=5, sticky='ew')
 
+        ttk.Label(self.prior_stage_frame, text='Auto-focus chan:').grid(row=3, column=0, sticky='e', padx=5, pady=5)
+        self.af_channel_var = tk.StringVar()
+        self.af_channel_entry = ttk.Entry(self.prior_stage_frame, textvariable=self.af_channel_var)
+        self.af_channel_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+
+        focus_button = ttk.Button(self.prior_stage_frame, text='Auto-Focus', command=self.run_autofocus)
+        focus_button.grid(row=3, column=2, columnspan=1, padx=5, pady=5, sticky="ew")
+
 
 
 
@@ -584,21 +592,6 @@ class GUI:
             self.zaber_port_entry.delete(0, tk.END)
             self.zaber_port_entry.insert(0, old_port)
 
-    def _on_prior_port_changed(self, event):
-        # no invalid values, within a padding, to prevent damaging the stage
-        # TODO: figure out the actual correct numbers here
-        val = self.prior_port_entry.get().strip()
-        old_val = "4"
-        try:
-            test = int(val)
-            if test < 0 or test > 9999:
-                raise ValueError
-            self.show_feedback(self.prior_port_entry)
-        except ValueError:
-            messagebox.showerror("Value Error", f"Invalid Prior port {val}. Reverting.")
-            self.prior_port_entry.delete(0, tk.END)
-            self.prior_port_entry.insert(0, old_val)
-
     def single_delay_changed(self, event=None):
         old_val = self.hyper_config['single_um']
         try:
@@ -622,48 +615,55 @@ class GUI:
         except Exception as e:
             messagebox.showerror("Stage Move Error", f"Error moving stage: {e}")
 
-    def move_prior_stage_z(self):
-        # TODO: read the docs, sigh
+    def _on_prior_port_changed(self, event):
+        val = self.prior_port_entry.get().strip()
+        old_val = "4"
         try:
-            port = int(self.prior_port_entry.get().strip())
+            test = int(val)
+            if test < 0 or test > 9999:
+                raise ValueError
+            self.show_feedback(self.prior_port_entry)
+        except ValueError:
+            messagebox.showerror("Value Error", f"Invalid Prior port {val}. Reverting.")
+            self.prior_port_entry.delete(0, tk.END)
+            self.prior_port_entry.insert(0, old_val)
+
+    def move_prior_stage_z(self):
+        try:
             z_height = int(self.prior_z_entry.get().strip())
             if not (0 <= z_height <= 50000):
                 messagebox.showerror("Value Error", "Z height must be between 0 and 50,000 µm.")
                 return
-            
-            ret, response = send_command(f"controller.connect {port}")
-            if ret != 0:
-                messagebox.showerror("Connection Error", f"Could not connect to Prior stage on COM{port}")
 
-            ret, response = send_command(f"controller.z.goto-position {z_height}")
-            if ret != 0:
-                messagebox.showerror("Movement Error", f"Could not move Prior stage to {z_height}")
+            prior.move_z(z_height)
 
-            send_command("controller.disconnect")
-            
         except ValueError:
-            messagebox.showerror("Input Error", "Please enter a valid numeric Z height and port.")
+            messagebox.showerror("Input Error", "Please enter a valid numeric Z height.")
 
-    def move_prior_stage_xy(self):  
-        try: 
-            port = int(self.prior_port_entry.get().strip())
+    def move_prior_stage_xy(self):
+        try:
             x, y = [int(v) for v in self.prior_pos_entry.get().split(",")]
-            if not (0 <= x <= 50000) or not (0 <= y <= 50000):  
+            if not (0 <= x <= 50000) or not (0 <= y <= 50000):
                 messagebox.showerror("Value Error", "X and Y positions must be between 0 and 50,000 µm.")
                 return
-            
-            ret, response = send_command(f"controller.connect {port}")
-            if ret != 0:
-                messagebox.showerror("Connection Error", f"Could not connect to Prior stage on COM{port}")
-            
-            ret, response = send_command(f'controller.stage.goto-position {x} {y}')
-            if ret != 0:
-                messagebox.showerror("Movement Error", f"Could not move Prior stage to {x}, {y}")
 
-            send_command("controller.disconnect")
-            
+            prior.move_xy(x, y)
+
         except ValueError:
             messagebox.showerror("Input Error", "Please enter a valid numeric X and Y position.")
+
+    def run_autofocus(self):
+        chan = self.af_channel_var.get().strip()
+        port = int(self.prior_port_entry.get().strip())
+        if chan not in self.config["channel_names"]:
+            messagebox.showerror("Focus Error", f"'{chan}' is not a valid input channel.")
+            return
+
+        try:
+            best_z = prior.auto_focus(self, port, chan)
+            messagebox.showinfo("Auto-Focus Complete", f"Optimal Z position: {best_z*0.1} µm")
+        except Exception as e:
+            messagebox.showerror("Auto-Focus Error", str(e))
 
 
     ###########################################################
