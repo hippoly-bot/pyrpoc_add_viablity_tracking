@@ -121,8 +121,7 @@ class GUI:
         
 
     def welcome(self):
-        messagebox.showinfo('Startup Message',
-            "This software allows you to coordinate and acquire data for Stimulated Raman imaging, as well as RPOC.\n\n"
+        messagebox.showinfo('Startup',
             "To collapse any parts of the sidebars, just press the pane title that you do not wish to see, e.g., click 'Delay Stage Settings' to hide it. \n"
             "Use the sidebar to configure acquisition parameters, and make sure to correctly match the analog input/output channels."
         )
@@ -209,7 +208,7 @@ class GUI:
 
         self.stop_button = ttk.Button(
             self.control_frame, text='Stop',
-            command=lambda: acquisition.stop_scan(self), state='disabled'
+            command=lambda: acquisition.reset_gui(self), state='disabled'
         )
         self.stop_button.grid(row=0, column=2, padx=5, pady=5, sticky='ew')
 
@@ -239,7 +238,7 @@ class GUI:
         ttk.Label(self.io_frame, text='Images to acquire').grid(row=0, column=0, sticky='w', padx=(5, 0))
         self.save_num_entry = ttk.Entry(self.io_frame, width=8)
         self.save_num_entry.insert(0, '1')
-        self.apply_feedback_to_entry(self.save_num_entry)
+        self.apply_feedback_to_entry(self.save_num_entry) # this isn't working for some reason
         self.save_num_entry.grid(row=0, column=1, sticky='w', padx=(5, 5))
 
         self.progress_label = ttk.Label(self.io_frame, text='(0/0)', font=('Calibri', 12, 'bold'))
@@ -880,6 +879,8 @@ class GUI:
 
             def command_wrapper(chan_label=label):
                 self.update_colorbar_entry_state(chan_label)
+                if self.data is not None:
+                    display.display_data(self, self.data)
 
             auto_cb = ttk.Checkbutton(
                 row_frame,
@@ -895,9 +896,18 @@ class GUI:
             fixed_entry.pack(side="left", padx=5)
             self.fixed_colorbar_widgets[label] = fixed_entry
 
+            self.apply_feedback_to_entry(fixed_entry)
             fixed_entry.configure(state='disabled')
+            fixed_entry.bind("<Return>", lambda e, cl=label: self.on_fixed_entry_update(cl))
+            fixed_entry.bind("<FocusOut>", lambda e, cl=label: self.on_fixed_entry_update(cl))
 
         self.cb_frame.update_idletasks()
+
+    def on_fixed_entry_update(self, channel_label):
+        if self.auto_colorbar_vars.get(channel_label, tk.BooleanVar()).get():
+            return  
+        if self.data is not None:
+            display.display_data(self, self.data)
 
     def update_colorbar_entry_state(self, display_name):
         widget = self.fixed_colorbar_widgets.get(display_name)

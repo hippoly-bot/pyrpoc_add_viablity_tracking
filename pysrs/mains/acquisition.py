@@ -9,12 +9,13 @@ from pysrs.helpers.galvo_funcs import Galvo
 from pysrs.helpers.run_image_2d import raster_scan, raster_scan_rpoc, variable_scan_rpoc
 
 
-def stop_scan(gui):
+def reset_gui(gui):
     gui.running = False
     gui.acquiring = False
     gui.continuous_button['state'] = 'normal'
     gui.single_button['state'] = 'normal'
     gui.stop_button['state'] = 'disabled'
+    gui.progress_label.config(text='(0/0)')
 
 
 def acquire(gui, continuous=False, startup=False):
@@ -60,13 +61,11 @@ def acquire(gui, continuous=False, startup=False):
             if not continuous: 
                 break
     except Exception as e:
-        messagebox.showerror('Error', f'Cannot collect/save data LINE 60EEE: {e}')
+        reset_gui(gui)
+        messagebox.showerror('Acquisition Error', f"Error acquiring in acquire():\n{e}")
+        return None
     finally:
-        gui.acquiring = False
-        gui.running = False
-        gui.continuous_button['state'] = 'normal'
-        gui.single_button['state'] = 'normal'
-        gui.stop_button['state'] = 'disabled'
+        reset_gui(gui)
 
 def acquire_multiple(gui, numshifts):
     images = []
@@ -99,7 +98,9 @@ def acquire_multiple(gui, numshifts):
             gui.progress_label.config(text=f'({i + 1}/{numshifts})')
             gui.root.update_idletasks()
         except Exception as e:
-            messagebox.showerror('Acquisition Error', f'Error acquiring images: {e}')
+            reset_gui(gui)
+            messagebox.showerror('Acquisition Error', f'Error acquiring in acquire_multiple(): {e}')
+            return None
 
     return images
 
@@ -127,7 +128,8 @@ def acquire_hyperspectral(gui, numshifts):
         try:
             gui.zaber_stage.move_absolute_um(pos)
         except Exception as e:
-            messagebox.showerror("Stage Move Error", str(e))
+            reset_gui(gui)
+            messagebox.showerror('Stage Move Error', f'Error acquiring in acquire_hyperspectral(): {e}')
             return None
 
         galvo = Galvo(gui.config)
