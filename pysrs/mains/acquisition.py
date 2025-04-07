@@ -20,7 +20,6 @@ def reset_gui(gui):
 
 def acquire(gui, continuous=False, startup=False, auxilary=False):
     if (gui.running or gui.acquiring) and not (startup or auxilary):
-        print('nnn')
         return  # Prevent acquisition if already running
     
     gui.running = continuous
@@ -31,7 +30,6 @@ def acquire(gui, continuous=False, startup=False, auxilary=False):
 
     try:
         while gui.running if continuous else True:
-            print('aaa')
             gui.update_config()
 
             hyperspectral = gui.hyperspectral_enabled.get()

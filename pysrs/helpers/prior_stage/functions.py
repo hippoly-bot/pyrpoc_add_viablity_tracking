@@ -171,7 +171,8 @@ def auto_focus(gui, port: int, channel_name: str, step_size=10):
         gui.root.update()
 
         image = gui.data[channel_index]
-        metric = cv2.Laplacian(image, cv2.CV_64F).var()
+        x, y = np.shape(image)
+        metric = cv2.Laplacian(image[int(3*x/8):int(5*x/8), int(3*y/8):int(5*y/8)], cv2.CV_64F).var() # only use the middle eighth for focus
         print(f"Z={z} → Focus Metric={metric:.2f}")
 
         if metric > best_focus:
