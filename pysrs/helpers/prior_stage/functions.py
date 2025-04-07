@@ -79,14 +79,10 @@ def wait_for_z_motion():
         time.sleep(0.1)
 
 
-def compute_focus_metric(image: np.ndarray) -> float:
-    return cv2.Laplacian(image, cv2.CV_64F).var()
-
-
 def auto_focus(gui, port: int, channel_name: str, sweep_range=25, step_size=5): # need to test this
     connect_prior(port)
 
-    gui.simulation_mode.set(False)
+    gui.simulation_mode.set(False) # no harm
     channel_index = gui.config["channel_names"].index(channel_name)
 
     ret, current_z = send_command("controller.z.position.get")
@@ -109,7 +105,7 @@ def auto_focus(gui, port: int, channel_name: str, sweep_range=25, step_size=5): 
 
         acquisition.acquire(gui)
         image = gui.data[channel_index]
-        metric = compute_focus_metric(image)
+        metric = cv2.Laplacian(image, cv2.CV_64F).var() # 
 
         print(f"Z={z} → Focus Metric={metric:.2f}")
         if metric > best_focus:
