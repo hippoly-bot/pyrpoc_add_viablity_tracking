@@ -18,10 +18,11 @@ def reset_gui(gui):
     gui.progress_label.config(text='(0/0)')
 
 
-def acquire(gui, continuous=False, startup=False):
-    if (gui.running or gui.acquiring) and not startup:
+def acquire(gui, continuous=False, startup=False, auxilary=False):
+    if (gui.running or gui.acquiring) and not (startup or auxilary):
+        print('nnn')
         return  # Prevent acquisition if already running
-
+    
     gui.running = continuous
     gui.acquiring = True
     gui.stop_button['state'] = 'normal'
@@ -30,6 +31,7 @@ def acquire(gui, continuous=False, startup=False):
 
     try:
         while gui.running if continuous else True:
+            print('aaa')
             gui.update_config()
 
             hyperspectral = gui.hyperspectral_enabled.get()
@@ -65,7 +67,8 @@ def acquire(gui, continuous=False, startup=False):
         messagebox.showerror('Acquisition Error', f"Error acquiring in acquire():\n{e}")
         return None
     finally:
-        reset_gui(gui)
+        if not auxilary:
+            reset_gui(gui)
 
 def acquire_multiple(gui, numshifts):
     images = []

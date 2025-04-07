@@ -41,7 +41,7 @@ class GUI:
             'device': 'Dev1',
             'ao_chans': ['ao1', 'ao0'],
             'ai_chans': ['ai0', 'ai1'],
-            'channel_names': ['AI0: MT - 505 nm', 'AI1: Dye - 642 nm'],
+            'channel_names': ['505', '642'],
             'zaber_chan': 'COM3',
             'amp_x': 0.75,
             'amp_y': 0.75,
@@ -412,6 +412,7 @@ class GUI:
         self.prior_z_entry = ttk.Entry(self.prior_stage_frame, width=10)
         self.apply_feedback_to_entry(self.prior_z_entry)
         self.prior_z_entry.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
+        self.prior_z_entry.insert(0, "940")
 
         self.prior_move_z_button = ttk.Button(self.prior_stage_frame, text="Move Z", command=self.move_prior_stage_z)
         self.prior_move_z_button.grid(row=1, column=2, columnspan=1, pady=5, sticky="ew")
@@ -428,10 +429,21 @@ class GUI:
         ttk.Label(self.prior_stage_frame, text='Auto-focus chan:').grid(row=3, column=0, sticky='e', padx=5, pady=5)
         self.af_channel_var = tk.StringVar()
         self.af_channel_entry = ttk.Entry(self.prior_stage_frame, textvariable=self.af_channel_var)
+        self.af_channel_entry.insert(0, '505')
         self.af_channel_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
 
-        focus_button = ttk.Button(self.prior_stage_frame, text='Auto-Focus', command=self.run_autofocus)
-        focus_button.grid(row=3, column=2, columnspan=1, padx=5, pady=5, sticky="ew")
+        ttk.Label(self.prior_stage_frame, text='Spacing (µm):').grid(row=4, column=0, sticky='e', padx=5, pady=5)
+        self.af_spacing_var = tk.StringVar()
+        self.af_spacing_entry = ttk.Entry(self.prior_stage_frame, textvariable=self.af_spacing_var)
+        self.af_spacing_entry.insert(0, '1')
+        self.af_spacing_entry.grid(row=4, column=1, padx=5, pady=5, sticky="ew")
+
+        focus_button = ttk.Button(
+            self.prior_stage_frame,
+            text='Auto-Focus',
+            command=lambda: threading.Thread(target=self.run_autofocus, daemon=True).start()
+        )
+        focus_button.grid(row=3, column=2, columnspan=1, rowspan=2, padx=5, pady=5, sticky="ew")
 
 
 
@@ -627,19 +639,25 @@ class GUI:
             self.prior_port_entry.delete(0, tk.END)
             self.prior_port_entry.insert(0, old_val)
 
+
     def move_prior_stage_z(self):
         try:
-            z_height = int(self.prior_z_entry.get().strip())
+            z_height = int(10*float(self.prior_z_entry.get()))
             if not (0 <= z_height <= 50000):
                 messagebox.showerror("Value Error", "Z height must be between 0 and 50,000 µm.")
                 return
-
-            prior.move_z(z_height)
-
         except ValueError:
             messagebox.showerror("Input Error", "Please enter a valid numeric Z height.")
+            
+        try:
+            port = int(self.prior_port_entry.get().strip())
+        except ValueError:
+            messagebox.showerror("Input Error", f"Invalid COM port: '{self.prior_port_entry.get().strip()}'")
+            return
+        
+        prior.move_z(port, z_height)
 
-    def move_prior_stage_xy(self):
+    def move_prior_stage_xy(self): #TODO: make logic kwargs consistent here
         try:
             x, y = [int(v) for v in self.prior_pos_entry.get().split(",")]
             if not (0 <= x <= 50000) or not (0 <= y <= 50000):
@@ -652,18 +670,36 @@ class GUI:
             messagebox.showerror("Input Error", "Please enter a valid numeric X and Y position.")
 
     def run_autofocus(self):
-        chan = self.af_channel_var.get().strip()
-        port = int(self.prior_port_entry.get().strip())
-        if chan not in self.config["channel_names"]:
-            messagebox.showerror("Focus Error", f"'{chan}' is not a valid input channel.")
-            return
-
         try:
-            best_z = prior.auto_focus(self, port, chan)
-            messagebox.showinfo("Auto-Focus Complete", f"Optimal Z position: {best_z*0.1} µm")
+            chan = self.af_channel_var.get().strip()
+            spacing_str = self.af_spacing_var.get().strip()
+            port_str = self.prior_port_entry.get().strip()
+
+            try:
+                spacing = int(10 * float(spacing_str))
+            except ValueError:
+                messagebox.showerror("Input Error", f"Invalid step size: '{spacing_str}'")
+                return
+
+            try:
+                port = int(port_str)
+            except ValueError:
+                messagebox.showerror("Input Error", f"Invalid COM port: '{port_str}'")
+                return
+            
+            if chan not in self.config["channel_names"]:
+                messagebox.showerror("Focus Error", f"'{chan}' is not a valid input channel.")
+                return
+
+            best_z, metric = prior.auto_focus(self, port, chan, step_size=spacing)
+
+            messagebox.showinfo(
+                "Auto-Focus Complete",
+                f"Optimal Z position: {best_z * 0.1:.1f} µm \n      Laplacian: {metric:.2f}"
+            )
+
         except Exception as e:
             messagebox.showerror("Auto-Focus Error", str(e))
-
 
     ###########################################################
     ##################### RPOC STUFF ##########################

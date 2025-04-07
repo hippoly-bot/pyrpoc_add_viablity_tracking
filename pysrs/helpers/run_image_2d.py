@@ -1,9 +1,12 @@
 import nidaqmx
 from nidaqmx.constants import AcquisitionType
+from nidaqmx.errors import DaqWarning
 import numpy as np
 from pysrs.helpers.galvo_funcs import Galvo
 import matplotlib.pyplot as plt
 from PIL import Image, ImageTk, ImageDraw, ImageOps
+import warnings
+warnings.filterwarnings("ignore", category=DaqWarning, message=".*200011.*")
 
 def raster_scan(ai_channels, galvo):
     if isinstance(ai_channels, str):
