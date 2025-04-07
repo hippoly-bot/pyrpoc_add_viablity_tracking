@@ -99,7 +99,6 @@ def display_data(gui, data_list):
 
             cax = ax_main.inset_axes([1.05, 0, 0.05, 1])
             cb = gui.fig.colorbar(im, cax=cax, orientation='vertical')
-            cb.set_label('Intensity', color='white')
             cb.ax.yaxis.set_tick_params(color='white', labelsize=8)
             cb.outline.set_edgecolor('white')
             for label in cb.ax.yaxis.get_ticklabels():
@@ -151,48 +150,39 @@ def display_data(gui, data_list):
         ax_vslice.tick_params(axis='both', labelsize=8)
         ax_vslice.set_ylim(y_extent[-1], y_extent[0])
 
-    if "mask_handle" not in ch_ax:
+        if "mask_handle" not in ch_ax:
             ch_ax["mask_handle"] = None
 
-    if gui.show_mask_var.get() and hasattr(gui, "rpoc_mask") and gui.rpoc_mask is not None:
-        mask = gui.rpoc_mask
-        mask = np.array(mask)
-        mask = (mask > 128)
+        # === MASK DISPLAY PER CHANNEL ===
+        if gui.show_mask_var.get() and hasattr(gui, "rpoc_mask") and gui.rpoc_mask is not None:
+            mask = np.array(gui.rpoc_mask)
+            mask = (mask > 128)
 
-        if mask.shape != (ny, nx):
-            from PIL import Image
-            temp_pil = Image.fromarray(mask.astype(np.uint8)*255)
-            temp_pil = temp_pil.resize((nx, ny), Image.NEAREST)
-            mask = np.array(temp_pil) > 128
+            if mask.shape != (ny, nx):
+                from PIL import Image
+                temp_pil = Image.fromarray(mask.astype(np.uint8) * 255)
+                temp_pil = temp_pil.resize((nx, ny), Image.NEAREST)
+                mask = np.array(temp_pil) > 128
 
-        mask_rgba = np.zeros((ny, nx, 4), dtype=float)
-        mask_rgba[..., 0] = mask  
-        mask_rgba[..., 3] = 0.4 * mask  
+            # Shade of green with transparency
+            mask_rgba = np.zeros((ny, nx, 4), dtype=float)
+            mask_rgba[..., 1] = mask   # green channel
+            mask_rgba[..., 3] = 0.4 * mask  # alpha
 
-        x_extent = np.linspace(
-            gui.config['offset_x'] - gui.config['amp_x'],
-            gui.config['offset_x'] + gui.config['amp_x'],
-            nx
-        )
-        y_extent = np.linspace(
-            gui.config['offset_y'] + gui.config['amp_y'],
-            gui.config['offset_y'] - gui.config['amp_y'],
-            ny
-        )
-        extent = [x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]]
+            extent = [x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]]
 
-        if ch_ax["mask_handle"] is None:
-            mask_im = ax_main.imshow(mask_rgba, extent=extent, origin='upper', aspect='equal')
-            ch_ax["mask_handle"] = mask_im
+            if ch_ax["mask_handle"] is None:
+                mask_im = ax_main.imshow(mask_rgba, extent=extent, origin='upper', aspect='equal')
+                ch_ax["mask_handle"] = mask_im
+            else:
+                ch_ax["mask_handle"].set_data(mask_rgba)
+                ch_ax["mask_handle"].set_extent(extent)
+
+            ch_ax["mask_handle"].set_visible(True)
         else:
-            ch_ax["mask_handle"].set_data(mask_rgba)
-            ch_ax["mask_handle"].set_extent(extent)
+            if ch_ax["mask_handle"] is not None:
+                ch_ax["mask_handle"].set_visible(False)
 
-        ch_ax["mask_handle"].set_visible(True)
-
-    else:
-        if ch_ax["mask_handle"] is not None:
-            ch_ax["mask_handle"].set_visible(False)
 
     gui.canvas.draw_idle()
 
