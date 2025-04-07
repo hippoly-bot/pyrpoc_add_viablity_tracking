@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import (
     QGraphicsView, QGraphicsScene, QGraphicsEllipseItem,
     QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem,
     QHBoxLayout, QCheckBox, QLabel, QMenu, QGraphicsTextItem, 
-    QSlider, QAction, QDialog
+    QAction, QDialog
 )
 from PyQt5.QtGui import QPixmap, QPainterPath, QPen, QBrush, QPainter, QFont, QColor, QPalette, QImage
 from PyQt5.QtCore import Qt, QPointF, QRectF, QPoint, QVariant
@@ -211,7 +211,6 @@ class ImageViewer(QGraphicsView):
         self.roi_table.setItem(row, 2, low_item)
         self.roi_table.setItem(row, 3, high_item)
 
-        # 5th column: modulation level
         self.roi_table.setItem(row, 4, QTableWidgetItem(str(0.5)))
 
     def get_random_color(self):
@@ -249,7 +248,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle('New RPOC Editor')
         self.params = Params() 
-        self.loaded_img = None  # Will store a grayscale numpy array
+        self.loaded_img = None  # will store a grayscale numpy array
 
         # full right side
         self.roi_table = QTableWidget(0, 5)
@@ -270,7 +269,6 @@ class MainWindow(QMainWindow):
         self.threshold_slider.setValue((20,80))
         self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
 
-        # NEW: Save button
         self.save_button = QPushButton("Save Mask")
         self.save_button.clicked.connect(self.save_mask)
 
@@ -300,7 +298,6 @@ class MainWindow(QMainWindow):
         self.roi_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.roi_table.customContextMenuRequested.connect(self.show_table_context_menu)
 
-        # NEW: Add preview action with shortcut 'P'
         preview_action = QAction("Preview Mask", self)
         preview_action.setShortcut("P")
         preview_action.triggered.connect(self.preview_mask)
@@ -314,10 +311,10 @@ class MainWindow(QMainWindow):
         pil_image = pil_image.convert("RGB")
         img_array = np.array(pil_image)
 
-        self.original_rgb_img = img_array  # Store original unfiltered image
-        self.loaded_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)  # Grayscale for mask gen
+        self.original_rgb_img = img_array
+        self.loaded_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)  
 
-        self.update_displayed_image()  # Apply current thresholds for display
+        self.update_displayed_image()  # apply current thresholds for display
 
     def load_image(self):
         file_path, _ = QFileDialog.getOpenFileName(self, 'Open Image', '', 'Images (*.png *.jpg *.bmp)')
@@ -339,7 +336,6 @@ class MainWindow(QMainWindow):
         gray = self.loaded_img
         rgb = self.original_rgb_img.copy()
 
-        # Mask out-of-range pixels
         mask_out = (gray < low) | (gray > high)
         rgb[mask_out] = [0, 0, 0]
 
@@ -352,7 +348,6 @@ class MainWindow(QMainWindow):
         self.image_scene.setSceneRect(QRectF(pixmap.rect()))
 
     def show_table_context_menu(self, pos):
-        # check which row was clicked
         row = self.roi_table.indexAt(pos).row()
         if row < 0:
             return
@@ -389,7 +384,7 @@ class MainWindow(QMainWindow):
             viewer.roi_items.pop(remove_i)
             viewer.roi_label_items.pop(remove_i)
 
-        # Re-label the remaining ROIs so they match table order
+        # relabel the remaining rois so they match table order
         for i, (roi, label) in enumerate(zip(viewer.roi_items, viewer.roi_label_items)):
             idx = i + 1  
             label.setPlainText(str(idx))
@@ -401,7 +396,7 @@ class MainWindow(QMainWindow):
             text_rect = label.boundingRect()
             label.setPos(cx - text_rect.width() / 2, cy - text_rect.height() / 2)
 
-        # Re-build the table from scratch
+        # rebuild table
         viewer.roi_table.setRowCount(0)
         for i, roi in enumerate(viewer.roi_items):
             path = roi.path()
@@ -413,11 +408,6 @@ class MainWindow(QMainWindow):
         self.params.low, self.params.high = values
 
     def generate_final_mask(self):
-        """
-        Generate the final mask as a grayscale numpy array where each pixel is
-        assigned a modulation value (scaled to 0-255) if its intensity is within the
-        specified thresholds. Overlapping ROIs are processed in table order.
-        """
         if self.loaded_img is None:
             return None
 
@@ -472,16 +462,11 @@ class MainWindow(QMainWindow):
             valid = (intensities >= low_val) & (intensities <= high_val)
             valid_idxs = np.where(valid)
 
-            # Overwrite in final_mask with the modulation value (scaled to 0-255)
             final_mask[inside_y[valid_idxs], inside_x[valid_idxs]] = int(mod_val * 255)
 
         return final_mask
 
     def preview_mask(self):
-        """
-        Preview the final mask in a modal dialog. This shows the computed mask
-        with analog modulations applied based on the ROI table.
-        """
         mask = self.generate_final_mask()
         if mask is None:
             return
@@ -502,20 +487,13 @@ class MainWindow(QMainWindow):
         dialog.exec_()
 
     def save_mask(self):
-        """
-        Generate and save a mask image where each pixel is set to the
-        modulation level (scaled to 0-255) of the ROI that claims it last
-        in the table, provided its intensity is within [low, high].
-        Otherwise 0.
-        """
         if self.loaded_img is None:
-            return  # No image loaded; do nothing
+            return 
 
         save_path, _ = QFileDialog.getSaveFileName(self, 'Save Mask', '', 'PNG (*.png);;TIFF (*.tif);;All Files (*)')
         if not save_path:
             return
 
-        # Use the same mask-generation logic
         final_mask = self.generate_final_mask()
         if final_mask is None:
             return
@@ -524,9 +502,6 @@ class MainWindow(QMainWindow):
         print("Mask saved to:", save_path)
 
 def launch_pyqt_editor(preloaded_image=None):
-    from PyQt5.QtWidgets import QApplication
-    import sys
-
     app = QApplication.instance()
     app_created = False
     if app is None:
@@ -543,7 +518,7 @@ def launch_pyqt_editor(preloaded_image=None):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    set_dark_theme(app)  # Apply dark mode
+    set_dark_theme(app)  # dark mode
     window = MainWindow()
     window.resize(1200, 800)
     window.show()
