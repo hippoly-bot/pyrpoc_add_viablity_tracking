@@ -8,7 +8,6 @@ from pysrs.mains.display import display_data
 from pysrs.helpers.galvo_funcs import Galvo
 from pysrs.helpers.run_image_2d import raster_scan, raster_scan_rpoc, variable_scan_rpoc
 
-
 def reset_gui(gui):
     gui.running = False
     gui.acquiring = False
@@ -17,11 +16,10 @@ def reset_gui(gui):
     gui.stop_button['state'] = 'disabled'
     gui.progress_label.config(text='(0/0)')
 
-
 def acquire(gui, continuous=False, startup=False, auxilary=False):
     if (gui.running or gui.acquiring) and not (startup or auxilary):
         return  # Prevent acquisition if already running
-    
+
     gui.running = continuous
     gui.acquiring = True
     gui.stop_button['state'] = 'normal'
@@ -31,10 +29,10 @@ def acquire(gui, continuous=False, startup=False, auxilary=False):
     try:
         while gui.running if continuous else True:
             gui.update_config()
-
             hyperspectral = gui.hyperspectral_enabled.get()
             save = gui.save_acquisitions.get()
-            numshifts_str = (gui.entry_numshifts.get().strip() if hyperspectral else gui.save_num_entry.get().strip())
+            numshifts_str = (gui.entry_numshifts.get().strip() if hyperspectral 
+                             else gui.save_num_entry.get().strip())
             filename = gui.save_file_entry.get().strip() if save else None
 
             if save and not filename:
@@ -50,7 +48,10 @@ def acquire(gui, continuous=False, startup=False, auxilary=False):
                 break
 
             try:
-                images = acquire_hyperspectral(gui, numshifts) if hyperspectral else acquire_multiple(gui, numshifts)
+                if hyperspectral:
+                    images = acquire_hyperspectral(gui, numshifts)
+                else:
+                    images = acquire_multiple(gui, numshifts)
                 if save and images:
                     save_images(gui, images, filename)
             except Exception as e:
@@ -83,16 +84,36 @@ def acquire_multiple(gui, numshifts):
             if gui.simulation_mode.get():
                 data_list = generate_data(len(channels), config=gui.config)
             else:
+                # Check if RPOC is enabled
                 if gui.rpoc_mask is not None and gui.rpoc_enabled.get():
-                    if gui.rpoc_mode_var.get() == 'standard': 
-                        data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var.get())
-                    elif gui.rpoc_mode_var.get() == 'variable':
-                        data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask, dwell_multiplier = gui.dwell_mult_var.get())
+                    if gui.modulate_lasers_var.get():
+                        # Modulated lasers: gather TTL channel strings and masks.
+                        mod_do_chans = ([var.get() for var in gui.mod_ttl_channel_vars]
+                                        if hasattr(gui, 'mod_ttl_channel_vars') else None)
+                        mod_masks = ([gui.mod_masks[i] for i in range(len(gui.mod_ttl_channel_vars))]
+                                     if hasattr(gui, 'mod_masks') else None)
+                        if gui.rpoc_mode_var.get() == 'standard': 
+                            data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask,
+                                                          modulate=True,
+                                                          mod_do_chans=mod_do_chans,
+                                                          mod_masks=mod_masks)
+                        elif gui.rpoc_mode_var.get() == 'variable':
+                            data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask,
+                                                            dwell_multiplier=gui.dwell_mult_var.get(),
+                                                            modulate=True,
+                                                            mod_masks=mod_masks)
+                    else:
+                        # Legacy RPOC behavior: single TTL channel.
+                        if gui.rpoc_mode_var.get() == 'standard': 
+                            data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask,
+                                                          do_chan=gui.mask_ttl_channel_var.get())
+                        elif gui.rpoc_mode_var.get() == 'variable':
+                            data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask,
+                                                            dwell_multiplier=gui.dwell_mult_var.get())
                 else:
                     data_list = raster_scan(channels, galvo)
 
             gui.root.after(0, display_data, gui, data_list)
-
             pil_images = [convert(d) for d in data_list]
             images.append(pil_images)
 
@@ -138,18 +159,35 @@ def acquire_hyperspectral(gui, numshifts):
             data_list = generate_data(len(channels), config=gui.config)
         else:
             if gui.rpoc_mask is not None:
-                if gui.rpoc_mode_var.get() == 'standard': 
-                    data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask, do_chan=gui.mask_ttl_channel_var.get())
-                elif gui.rpoc_mode_var.get() == 'variable':
-                    data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask, dwell_multiplier = gui.dwell_mult_var.get())
+                if gui.modulate_lasers_var.get():
+                    mod_do_chans = ([var.get() for var in gui.mod_ttl_channel_vars]
+                                    if hasattr(gui, 'mod_ttl_channel_vars') else None)
+                    mod_masks = ([gui.mod_masks[i] for i in range(len(gui.mod_ttl_channel_vars))]
+                                 if hasattr(gui, 'mod_ttl_channel_vars') and hasattr(gui, 'mod_masks') else None)
+                    if gui.rpoc_mode_var.get() == 'standard': 
+                        data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask,
+                                                      modulate=True,
+                                                      mod_do_chans=mod_do_chans,
+                                                      mod_masks=mod_masks)
+                    elif gui.rpoc_mode_var.get() == 'variable':
+                        data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask,
+                                                        dwell_multiplier=gui.dwell_mult_var.get(),
+                                                        modulate=True,
+                                                        mod_masks=mod_masks)
+                else:
+                    if gui.rpoc_mode_var.get() == 'standard': 
+                        data_list = raster_scan_rpoc(channels, galvo, gui.rpoc_mask,
+                                                      do_chan=gui.mask_ttl_channel_var.get())
+                    elif gui.rpoc_mode_var.get() == 'variable':
+                        data_list = variable_scan_rpoc(channels, galvo, gui.rpoc_mask,
+                                                        dwell_multiplier=gui.dwell_mult_var.get())
             else:
                 data_list = raster_scan(channels, galvo)
         gui.root.after(0, display_data, gui, data_list)
-
         pil_images = [convert(d) for d in data_list]
         images.append(pil_images)
 
-        gui.progress_label.config(text=f'({i + 1}/{numshifts})') # update the counter so the user doesnt get bored
+        gui.progress_label.config(text=f'({i + 1}/{numshifts})')
         gui.root.update_idletasks()
 
     return images
@@ -169,7 +207,6 @@ def save_images(gui, images, filename):
         channel_frames = [frame[ch_idx] for frame in images]
         counter = 1
 
-        # label from channel_names, or fallback
         if 'channel_names' in gui.config and ch_idx < len(gui.config['channel_names']):
             channel_suffix = gui.config['channel_names'][ch_idx]
         elif ch_idx < len(gui.config['ai_chans']):
@@ -195,5 +232,5 @@ def save_images(gui, images, filename):
         saved_fnames.append(new_filename)
 
     msg = "Saved frames:\n" + "\n".join(saved_fnames)
-    messagebox.showinfo('Done', msg) # maybe dont need this here... probably is nice to see though
+    messagebox.showinfo('Done', msg)
     gui.progress_label.config(text=f'(0/{len(images)})')

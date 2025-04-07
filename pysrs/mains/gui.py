@@ -449,95 +449,84 @@ class GUI:
 
 
         ###########################################################
-        #################### 6. RPOC ###################
+        #################### 6. RPOC ##############################
         ###########################################################
         self.rpoc_pane = CollapsiblePane(self.sidebar, text='RPOC Masking', gui=self)
         self.rpoc_pane.pack(fill="x", padx=10, pady=5)
 
-        self.rpoc_frame = ttk.Frame(self.rpoc_pane.container, padding=(12, 12))
+        self.rpoc_frame = ttk.Frame(self.rpoc_pane.container, padding=(8, 8))
         self.rpoc_frame.grid(row=0, column=0, sticky="nsew")
-        for col in range(2):
-            self.rpoc_frame.columnconfigure(col, weight=1)
+        for col in range(4):
+            self.rpoc_frame.columnconfigure(col, weight=0)
 
+
+        newmask_button = ttk.Button(self.rpoc_frame, text='Create mask from:', command=self.create_mask, width=14)
+        newmask_button.grid(row=0, column=0, sticky="ew", padx=5, pady=2)
+
+        self.rpoc_channel_var = tk.StringVar()
+        self.rpoc_channel_entry = ttk.Entry(self.rpoc_frame, textvariable=self.rpoc_channel_var, width=10)
+        self.rpoc_channel_entry.grid(row=0, column=1, sticky="w", padx=5, pady=2)
+        self.apply_feedback_to_entry(self.rpoc_channel_entry)
+        self.rpoc_channel_entry.bind("<Return>", self.finalize_selection)
+        self.rpoc_channel_entry.bind("<FocusOut>", self.finalize_selection)
+
+        
+
+        ttk.Separator(self.rpoc_frame, orient="horizontal").grid(row=1, column=0, columnspan=4, sticky="ew", pady=6)
+
+        # AOM Modulation Controls
+        self.modulate_lasers_var = tk.BooleanVar(value=False)
+        modulate_lasers_check = ttk.Checkbutton(
+            self.rpoc_frame,
+            text="Enable AOM Modulation",
+            variable=self.modulate_lasers_var,
+            command=self.update_modulation_channels
+        )
+        modulate_lasers_check.grid(row=2, column=0, columnspan=4, sticky="w", pady=2)
+
+        ttk.Label(self.rpoc_frame, text="# of Modulation Channels:").grid(
+            row=3, column=0, sticky="e", padx=5, pady=2
+        )
+        self.num_mod_channels_var = tk.IntVar(value=1)
+        self.num_mod_channels_entry = ttk.Entry(self.rpoc_frame, textvariable=self.num_mod_channels_var, width=5)
+        self.num_mod_channels_entry.grid(row=3, column=1, sticky="w", padx=5, pady=2)
+        self.num_mod_channels_entry.bind("<FocusOut>", lambda e: self.update_modulation_channels())
+        self.num_mod_channels_entry.bind("<Return>", lambda e: self.update_modulation_channels())
+
+        self.mod_channels_frame = ttk.LabelFrame(self.rpoc_frame, text="Modulation Channel Settings")
+        self.mod_channels_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(4, 8))
+        for col in range(4):
+            self.mod_channels_frame.columnconfigure(col, weight=0)
+
+        # Variable Dwell Time
+        self.var_dwell_var = tk.BooleanVar(value=False)
+        var_dwell_check = ttk.Checkbutton(
+            self.rpoc_frame,
+            text="Enable Variable Dwell Time",
+            variable=self.var_dwell_var
+        )
+        var_dwell_check.grid(row=5, column=0, columnspan=4, sticky="w", pady=(0, 10))
+
+        ttk.Separator(self.rpoc_frame, orient="horizontal").grid(row=6, column=0, columnspan=4, sticky="ew", pady=6)
+
+        # Mask display & activation
         self.show_mask_var = tk.BooleanVar(value=False)
         show_mask_check = ttk.Checkbutton(
             self.rpoc_frame, text='Show RPOC Mask',
             variable=self.show_mask_var, command=self.toggle_rpoc_fields
         )
-        show_mask_check.grid(row=6, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+        show_mask_check.grid(row=7, column=0, padx=5, pady=2, sticky="w")
 
         self.rpoc_enabled = tk.BooleanVar(value=False)
         activate_rpoc_check = ttk.Checkbutton(
             self.rpoc_frame, text='Activate RPOC Mask',
-            variable=self.rpoc_enabled,
-            command=self.toggle_rpoc_fields
+            variable=self.rpoc_enabled, command=self.toggle_rpoc_fields
         )
-        activate_rpoc_check.grid(row=7, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+        activate_rpoc_check.grid(row=7, column=1, padx=5, pady=2, sticky="w")
+
+        self.update_modulation_channels()
 
 
-        self.mask_status_entry = ttk.Entry(
-            self.rpoc_frame, width=20, font=('Calibri', 12),
-            justify="center", textvariable=self.mask_file_path,
-            state="readonly"
-        )
-        self.apply_feedback_to_entry(self.mask_status_entry)
-        self.mask_status_entry.grid(row=1, column=1, padx=5, pady=5, columnspan=1, sticky="ew")
-
-        loadmask_button = ttk.Button(self.rpoc_frame, text='Load Mask', command=self.update_mask)
-        loadmask_button.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
-
-        newmask_button = ttk.Button(self.rpoc_frame, text='Create New Mask', command=self.create_mask)
-        newmask_button.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
-
-        ttk.Label(self.rpoc_frame, text='Create mask from:').grid(row=3, column=0, sticky='e', padx=5, pady=5)
-        self.rpoc_channel_var = tk.StringVar()
-        self.rpoc_channel_entry = ttk.Entry(self.rpoc_frame, textvariable=self.rpoc_channel_var)
-        self.rpoc_channel_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
-        self.apply_feedback_to_entry(self.rpoc_channel_entry)
-        self.rpoc_channel_entry.bind("<Return>", self.finalize_selection)
-        self.rpoc_channel_entry.bind("<FocusOut>", self.finalize_selection)
-
-        ttk.Label(self.rpoc_frame, text='RPOC Mode:').grid(row=4, column=0, sticky='e', padx=5, pady=5)
-        mode_frame = ttk.Frame(self.rpoc_frame)
-        mode_frame.grid(row=4, column=1, sticky='w', padx=5, pady=5)
-
-        self.rpoc_mode_var = tk.StringVar(value="standard")
-
-        rb_standard = ttk.Radiobutton(
-            mode_frame, text='Standard TTL', value='standard',
-            variable=self.rpoc_mode_var, command=self._on_rpoc_mode_changed
-        )
-        rb_standard.pack(anchor="w", padx=5)
-
-        rb_variable = ttk.Radiobutton(
-            mode_frame, text='Variable Dwell', value='variable',
-            variable=self.rpoc_mode_var, command=self._on_rpoc_mode_changed
-        )
-        rb_variable.pack(anchor="w", padx=5)
-
-        self.ttl_frame = ttk.Frame(self.rpoc_frame)
-        self.ttl_frame.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
-
-        ttk.Label(self.ttl_frame, text='DO Line:').pack(side="left", padx=5)
-        self.mask_ttl_channel_var = tk.StringVar(value="port0/line5")
-        self.mask_ttl_entry = ttk.Entry(self.ttl_frame, textvariable=self.mask_ttl_channel_var, width=12)
-        self.mask_ttl_entry.pack(side="left", padx=5)
-        self.apply_feedback_to_entry(self.mask_ttl_entry)
-
-        self.dwell_frame = ttk.Frame(self.rpoc_frame)
-        self.dwell_frame.grid(row=5, column=1, padx=5, pady=5, sticky="ew")
-
-        ttk.Label(self.dwell_frame, text='Multiplier:').pack(side="left", padx=5)
-        self.dwell_mult_var = tk.DoubleVar(value=2.0)
-        self.dwell_mult_entry = ttk.Entry(self.dwell_frame, textvariable=self.dwell_mult_var, width=8)
-        self.dwell_mult_entry.pack(side="left", padx=5)
-        self.apply_feedback_to_entry(self.dwell_mult_entry)
-
-        self._on_rpoc_mode_changed()
-
-
-
-        
 
 
 
@@ -755,6 +744,64 @@ class GUI:
             self.mask_file_path.set("No mask loaded")
             self.rpoc_mask = None
 
+    def update_modulation_channels(self):
+        for child in self.mod_channels_frame.winfo_children():
+            child.destroy()
+        try:
+            num = int(self.num_mod_channels_var.get())
+        except ValueError:
+            num = 0
+
+        self.mod_ttl_channel_vars = []
+        self.mod_mask_vars = []
+        self.mod_mask_entries = []
+        self.mod_loadmask_buttons = []
+
+        for i in range(num):
+            ttk.Label(self.mod_channels_frame, text=f"Mod {i+1}:").grid(
+                row=i, column=0, sticky="e", padx=5, pady=2
+            )
+            ttl_var = tk.StringVar(value=f"port0/line{4+i}")
+            self.mod_ttl_channel_vars.append(ttl_var)
+
+            ttl_entry = ttk.Entry(self.mod_channels_frame, textvariable=ttl_var, width=12)
+            ttl_entry.grid(row=i, column=1, sticky="w", padx=5, pady=2)
+
+            mask_var = tk.StringVar(value="No mask loaded")
+            self.mod_mask_vars.append(mask_var)
+            mask_entry = ttk.Entry(self.mod_channels_frame, textvariable=mask_var, width=18, state="readonly")
+            mask_entry.grid(row=i, column=2, sticky="w", padx=5, pady=2)
+            self.mod_mask_entries.append(mask_entry)
+
+            load_btn = ttk.Button(
+                self.mod_channels_frame, text="Load",
+                command=lambda idx=i: self.load_mod_mask(idx), width=6
+            )
+            load_btn.grid(row=i, column=3, padx=5, pady=2)
+            self.mod_loadmask_buttons.append(load_btn)
+
+        self.mod_channels_frame.update_idletasks()
+
+
+
+
+    def load_mod_mask(self, idx):
+        file_path = filedialog.askopenfilename(
+            title="Select Mask File for Mod Channel",
+            filetypes=[("Mask Files", "*.mask *.json *.txt *.png"), ("All Files", "*.*")]
+        )
+        if file_path:
+            filename = os.path.basename(file_path)
+            self.mod_mask_vars[idx].set(filename)
+            # Optionally, store the loaded mask image in a dictionary.
+            if not hasattr(self, 'mod_masks'):
+                self.mod_masks = {}
+            try:
+                self.mod_masks[idx] = Image.open(file_path).convert('L')
+            except Exception as e:
+                messagebox.showerror("Mask Error", f"Error loading mask: {e}")
+        else:
+            self.mod_mask_vars[idx].set("No mask loaded")
 
 
     ###########################################################

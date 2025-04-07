@@ -78,56 +78,6 @@ def wait_for_z_motion():
 
         time.sleep(0.1)
 
-
-# def auto_focus(gui, port: int, channel_name: str, step_size=10): # need to test this
-#     connect_prior(port)
-
-#     gui.simulation_mode.set(False) # no harm
-#     channel_index = gui.config["channel_names"].index(channel_name)
-
-#     ret, current_z = send_command("controller.z.position.get")
-#     if ret != 0:
-#         raise RuntimeError("Failed to retrieve current Z position.")
-#     try:
-#         current_z = int(current_z)
-#     except ValueError:
-#         raise RuntimeError(f"Invalid Z position response: '{current_z}'")
-
-#     print(f"[Autofocus] Current Z position: {current_z} units")
-
-#     z_positions = range(current_z - 10*step_size, current_z + 10*step_size + 1, step_size)
-#     best_focus = -1
-#     best_z = current_z
-
-#     for z in z_positions:
-#         send_command(f"controller.z.goto-position {z}")
-#         wait_for_z_motion()
-
-#         acquisition.acquire(gui)
-#         gui.root.update_idletasks()
-#         gui.root.update()  
-
-#         image = gui.data[channel_index]
-#         metric = cv2.Laplacian(image, cv2.CV_64F).var() # 
-
-#         print(f"Z={z} → Focus Metric={metric:.2f}")
-#         if metric > best_focus:
-#             best_focus = metric
-#             best_z = z
-
-#     print(f"[Autofocus] Best Z = {best_z} with metric = {best_focus:.2f}")
-#     send_command(f"controller.z.goto-position {best_z}")
-#     wait_for_z_motion()
-
-#     acquisition.acquire(gui)
-#     gui.root.update_idletasks()
-#     gui.root.update()  
-        
-#     image = gui.data[channel_index]
-#     metric = cv2.Laplacian(image, cv2.CV_64F).var() 
-
-#     return best_z, metric
-
 def auto_focus(gui, port: int, channel_name: str, step_size=10):
     connect_prior(port)
 
