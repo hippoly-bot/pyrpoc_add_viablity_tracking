@@ -1,10 +1,3 @@
-'''
-new RPOC GUI/model
-goal is to have a fully single-"segment" level editor, both in table and drawing form
-i want it to feel like the cellpose GUI, so I have changed to PyQT for this part
-tkinter is more familiar, so I will keep that for the main GUIs
-'''
-
 import sys
 import numpy as np
 from PIL import Image, ImageDraw
@@ -12,19 +5,21 @@ import cv2
 import random
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QFileDialog,
-    QGraphicsView, QGraphicsScene, QGraphicsPixmapItem,
+    QGraphicsView, QGraphicsScene, QGraphicsEllipseItem,
     QVBoxLayout, QWidget, QTableWidget, QTableWidgetItem,
-    QHBoxLayout, QCheckBox, QLabel, QMenu, QGraphicsTextItem, QGraphicsDropShadowEffect, QGraphicsEllipseItem
+    QHBoxLayout, QCheckBox, QLabel, QMenu, QGraphicsTextItem, 
+    QSlider, QAction, QDialog
 )
-from PyQt5.QtGui import QPixmap, QPainterPath, QPen, QBrush, QPainter, QFont, QColor, QPalette
-from PyQt5.QtCore import Qt, QPointF, QRectF, QPoint, QVariant, QPoint
-
+from PyQt5.QtGui import QPixmap, QPainterPath, QPen, QBrush, QPainter, QFont, QColor, QPalette, QImage
+from PyQt5.QtCore import Qt, QPointF, QRectF, QPoint, QVariant
+from superqt import QRangeSlider
 
 class ImageViewer(QGraphicsView):
-    def __init__(self, scene, roi_table):
+    def __init__(self, scene, roi_table, params):
         super().__init__(scene)
         self.setRenderHints(self.renderHints() | QPainter.Antialiasing)
         self.roi_table = roi_table
+        self.params = params
 
         self.setMouseTracking(True)
         self.setDragMode(QGraphicsView.NoDrag)
@@ -184,8 +179,6 @@ class ImageViewer(QGraphicsView):
         self.scene().addItem(label_item)
         return label_item
 
-
-
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_M:
             self.show_rois = not self.show_rois
@@ -205,6 +198,7 @@ class ImageViewer(QGraphicsView):
     def add_roi_to_table(self, idx, points):
         row = self.roi_table.rowCount()
         self.roi_table.insertRow(row)
+
         item = QTableWidgetItem(f'ROI {idx}')
         item.setData(Qt.UserRole, idx)
         self.roi_table.setItem(row, 0, item)
@@ -212,13 +206,19 @@ class ImageViewer(QGraphicsView):
         coords_str = ', '.join([f'({p.x():.1f}, {p.y():.1f})' for p in points])
         self.roi_table.setItem(row, 1, QTableWidgetItem(coords_str))
 
+        low_item = QTableWidgetItem(str(self.params.low))
+        high_item = QTableWidgetItem(str(self.params.high))
+        self.roi_table.setItem(row, 2, low_item)
+        self.roi_table.setItem(row, 3, high_item)
+
+        # 5th column: modulation level
+        self.roi_table.setItem(row, 4, QTableWidgetItem(str(0.5)))
+
     def get_random_color(self):
         r = random.randint(50, 255)
         g = random.randint(50, 255)
         b = random.randint(50, 255)
-        from PyQt5.QtGui import QColor
         return QColor(r, g, b)
-
 
 def set_dark_theme(app):
     app.setStyle("Fusion")
@@ -239,29 +239,55 @@ def set_dark_theme(app):
 
     app.setPalette(dark_palette)
 
-
-class MainWindow(QMainWindow):
+class Params:  # for global parameter management
     def __init__(self):
+        self.low = 80
+        self.high = 200
+         
+class MainWindow(QMainWindow):
+    def __init__(self, preload_image=None):
         super().__init__()
         self.setWindowTitle('New RPOC Editor')
+        self.params = Params() 
+        self.loaded_img = None  # Will store a grayscale numpy array
 
-        self.image_scene = QGraphicsScene()
-        self.roi_table = QTableWidget(0, 2)
-        self.roi_table.setHorizontalHeaderLabels(['ROI Name', 'Coordinates'])
+        # full right side
+        self.roi_table = QTableWidget(0, 5)
+        self.roi_table.setHorizontalHeaderLabels(['ROI Name', 'Coordinates', 'Lower Threshold', 'Upper Threshold', 'Modulation Level'])
 
-        self.image_view = ImageViewer(self.image_scene, self.roi_table)
-
+        # top on left
         load_button = QPushButton('Load Image')
         load_button.clicked.connect(self.load_image)
 
-        self.help_label = QLabel('Press \"M\" to toggle mask visibility\n'
-                                 'Press \"N\" to toggle label visibility\n'
-                                 'Right-click row in table to delete ROI')
+        # middle left
+        self.help_label = QLabel('Press "M" to toggle mask visibility\n'
+                                 'Press "N" to toggle label visibility\n'
+                                 'Right-click row in table to delete ROI\n'
+                                 'Press "P" to preview the final mask')
+        self.threshold_slider = QRangeSlider(Qt.Horizontal)
+        self.threshold_slider.setMinimum(0)
+        self.threshold_slider.setMaximum(255)
+        self.threshold_slider.setValue((20,80))
+        self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
+
+        # NEW: Save button
+        self.save_button = QPushButton("Save Mask")
+        self.save_button.clicked.connect(self.save_mask)
+
+        middle_controls_layout = QHBoxLayout()
+        middle_controls_layout.addWidget(self.help_label)
+        middle_controls_layout.addWidget(self.threshold_slider)
+        middle_controls_layout.addWidget(self.save_button)
+
+        # bottom left
+        self.image_scene = QGraphicsScene()
+        self.image_item = self.image_scene.addPixmap(QPixmap())  # Placeholder
+        self.image_view = ImageViewer(self.image_scene, self.roi_table, self.params)   
 
         layout = QHBoxLayout()
         left_layout = QVBoxLayout()
-        left_layout.addWidget(load_button)
-        left_layout.addWidget(self.help_label)
+        left_layout.addWidget(load_button) 
+        left_layout.addLayout(middle_controls_layout)
         left_layout.addWidget(self.image_view)
 
         layout.addLayout(left_layout)
@@ -274,13 +300,56 @@ class MainWindow(QMainWindow):
         self.roi_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.roi_table.customContextMenuRequested.connect(self.show_table_context_menu)
 
+        # NEW: Add preview action with shortcut 'P'
+        preview_action = QAction("Preview Mask", self)
+        preview_action.setShortcut("P")
+        preview_action.triggered.connect(self.preview_mask)
+        self.addAction(preview_action)
+
+        if preload_image is not None:
+            self.set_preloaded_image(preload_image)
+
+    def set_preloaded_image(self, pil_image):
+        # Ensure RGB format
+        pil_image = pil_image.convert("RGB")
+        img_array = np.array(pil_image)
+
+        self.original_rgb_img = img_array  # Store original unfiltered image
+        self.loaded_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)  # Grayscale for mask gen
+
+        self.update_displayed_image()  # Apply current thresholds for display
+
     def load_image(self):
         file_path, _ = QFileDialog.getOpenFileName(self, 'Open Image', '', 'Images (*.png *.jpg *.bmp)')
         if file_path:
-            pixmap = QPixmap(file_path)
-            self.image_scene.clear()
-            self.image_scene.addPixmap(pixmap)
-            self.image_scene.setSceneRect(QRectF(pixmap.rect()))
+            img_array = cv2.imread(file_path)
+            if img_array is None:
+                return
+            img_array = cv2.cvtColor(img_array, cv2.COLOR_BGR2RGB)
+
+            self.original_rgb_img = img_array
+            self.loaded_img = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+            self.update_displayed_image()
+
+    def update_displayed_image(self):
+        if not hasattr(self, 'original_rgb_img') or self.original_rgb_img is None:
+            return
+
+        low, high = self.threshold_slider.value()
+        gray = self.loaded_img
+        rgb = self.original_rgb_img.copy()
+
+        # Mask out-of-range pixels
+        mask_out = (gray < low) | (gray > high)
+        rgb[mask_out] = [0, 0, 0]
+
+        height, width, channels = rgb.shape
+        bytes_per_line = channels * width
+        qimage = QImage(rgb.data, width, height, bytes_per_line, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(qimage)
+
+        self.image_item.setPixmap(pixmap)
+        self.image_scene.setSceneRect(QRectF(pixmap.rect()))
 
     def show_table_context_menu(self, pos):
         # check which row was clicked
@@ -320,6 +389,7 @@ class MainWindow(QMainWindow):
             viewer.roi_items.pop(remove_i)
             viewer.roi_label_items.pop(remove_i)
 
+        # Re-label the remaining ROIs so they match table order
         for i, (roi, label) in enumerate(zip(viewer.roi_items, viewer.roi_label_items)):
             idx = i + 1  
             label.setPlainText(str(idx))
@@ -331,12 +401,146 @@ class MainWindow(QMainWindow):
             text_rect = label.boundingRect()
             label.setPos(cx - text_rect.width() / 2, cy - text_rect.height() / 2)
 
+        # Re-build the table from scratch
         viewer.roi_table.setRowCount(0)
         for i, roi in enumerate(viewer.roi_items):
             path = roi.path()
             points = path.toSubpathPolygons()[0]
             viewer.add_roi_to_table(i + 1, points)
-            
+
+    def on_threshold_changed(self, values):
+        self.update_displayed_image()   # update visible pixel
+        self.params.low, self.params.high = values
+
+    def generate_final_mask(self):
+        """
+        Generate the final mask as a grayscale numpy array where each pixel is
+        assigned a modulation value (scaled to 0-255) if its intensity is within the
+        specified thresholds. Overlapping ROIs are processed in table order.
+        """
+        if self.loaded_img is None:
+            return None
+
+        height, width = self.loaded_img.shape[:2]
+        final_mask = np.zeros((height, width), dtype=np.uint8)
+        row_count = self.roi_table.rowCount()
+
+        for row in range(row_count):
+            idx_item = self.roi_table.item(row, 0)
+            coords_item = self.roi_table.item(row, 1)
+            low_item = self.roi_table.item(row, 2)
+            high_item = self.roi_table.item(row, 3)
+            mod_item = self.roi_table.item(row, 4)
+
+            if not (idx_item and coords_item and low_item and high_item and mod_item):
+                continue
+
+            try:
+                low_val = float(low_item.text())
+                high_val = float(high_item.text())
+                mod_val = float(mod_item.text())  # typically between 0.0 and 1.0
+            except:
+                continue
+
+            roi_index = idx_item.data(Qt.UserRole)
+            if roi_index is None:
+                continue
+
+            matching_item_idx = None
+            for i, lbl in enumerate(self.image_view.roi_label_items):
+                if lbl.toPlainText() == str(roi_index):
+                    matching_item_idx = i
+                    break
+            if matching_item_idx is None:
+                continue
+
+            roi_path_item = self.image_view.roi_items[matching_item_idx]
+            polygons = roi_path_item.path().toSubpathPolygons()
+            if not polygons:
+                continue
+
+            polygon = polygons[0]
+            pts = []
+            for p in polygon:
+                pts.append([int(round(p.x())), int(round(p.y()))])
+            pts = np.array(pts, dtype=np.int32).reshape(-1, 1, 2)
+            roi_mask = np.zeros((height, width), dtype=np.uint8)
+            cv2.fillPoly(roi_mask, [pts], 255)
+
+            inside_y, inside_x = np.where(roi_mask == 255)
+            intensities = self.loaded_img[inside_y, inside_x]
+            valid = (intensities >= low_val) & (intensities <= high_val)
+            valid_idxs = np.where(valid)
+
+            # Overwrite in final_mask with the modulation value (scaled to 0-255)
+            final_mask[inside_y[valid_idxs], inside_x[valid_idxs]] = int(mod_val * 255)
+
+        return final_mask
+
+    def preview_mask(self):
+        """
+        Preview the final mask in a modal dialog. This shows the computed mask
+        with analog modulations applied based on the ROI table.
+        """
+        mask = self.generate_final_mask()
+        if mask is None:
+            return
+
+        height, width = mask.shape
+        bytes_per_line = width
+        qimg = QImage(mask.data, width, height, bytes_per_line, QImage.Format_Grayscale8)
+        pixmap = QPixmap.fromImage(qimg)
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Mask Preview")
+        layout = QVBoxLayout()
+        label = QLabel()
+        label.setPixmap(pixmap)
+        layout.addWidget(label)
+        dialog.setLayout(layout)
+        dialog.resize(width, height)
+        dialog.exec_()
+
+    def save_mask(self):
+        """
+        Generate and save a mask image where each pixel is set to the
+        modulation level (scaled to 0-255) of the ROI that claims it last
+        in the table, provided its intensity is within [low, high].
+        Otherwise 0.
+        """
+        if self.loaded_img is None:
+            return  # No image loaded; do nothing
+
+        save_path, _ = QFileDialog.getSaveFileName(self, 'Save Mask', '', 'PNG (*.png);;TIFF (*.tif);;All Files (*)')
+        if not save_path:
+            return
+
+        # Use the same mask-generation logic
+        final_mask = self.generate_final_mask()
+        if final_mask is None:
+            return
+
+        cv2.imwrite(save_path, final_mask)
+        print("Mask saved to:", save_path)
+
+def launch_pyqt_editor(preloaded_image=None):
+    from PyQt5.QtWidgets import QApplication
+    import sys
+
+    app = QApplication.instance()
+    app_created = False
+    if app is None:
+        app = QApplication(sys.argv)
+        app_created = True
+
+    set_dark_theme(app)
+    win = MainWindow(preload_image=preloaded_image)
+    win.resize(1200, 800)
+    win.show()
+
+    if app_created:
+        app.exec_()
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     set_dark_theme(app)  # Apply dark mode

@@ -6,15 +6,16 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import threading, os
 from pathlib import Path
 from PIL import Image
-from pysrs.mains.zaber import ZaberStage
-from pysrs.mains.rpoc2 import RPOC
-from pysrs.mains.widgets import CollapsiblePane, ScrollableFrame
-from pysrs.mains.utils import Tooltip
+from pysrs.helpers.zaber import ZaberStage
+from pysrs.old_utils.rpoc2 import RPOC
+from pysrs.helpers.widgets import CollapsiblePane, ScrollableFrame
+from pysrs.helpers.utils import Tooltip
 from pysrs.mains import acquisition
-from pysrs.mains import calibration
+from pysrs.helpers import calibration
 from pysrs.mains import display
 from pysrs.mains.display import create_gray_red_cmap
 from pysrs.prior_stage.prior_stage_movement_test import send_command, wait_for_z_motion
+from pysrs.mains.pyqt_rpoc import launch_pyqt_editor
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FOLDERICON_PATH = BASE_DIR / "data" / "folder_icon.png"
@@ -680,18 +681,14 @@ class GUI:
         if channel_index >= np.shape(self.data)[0]:
             messagebox.showerror("Data Mismatch", f"No data at channel {selected_channel}.")
             return
-        selected_image = self.data[channel_index]
-        mask_window = tk.Toplevel(self.root)
-        mask_window.title(f'RPOC Mask Editor - {selected_channel}')
 
-        if isinstance(selected_image, np.ndarray):
-            # scale to 0..255 if needed
-            selected_image = (selected_image/(np.max(selected_image)) * 255).astype(np.uint8)
-            selected_image = Image.fromarray(selected_image).convert("RGB")
-        else:
-            selected_image = selected_image.convert("RGB")
+        image_data = self.data[channel_index]
+        image_data = (image_data / np.max(image_data) * 255).astype(np.uint8)
 
-        RPOC(mask_window, image=selected_image)
+        pil_image = Image.fromarray(image_data).convert("RGB")
+
+        # Import the PyQt editor function directly
+        launch_pyqt_editor(preloaded_image=pil_image)
 
     def update_rpoc_options(self):
         if self.config["channel_names"]:

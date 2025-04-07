@@ -1,7 +1,7 @@
 import nidaqmx
 from nidaqmx.constants import AcquisitionType
 import numpy as np
-from pysrs.mains.galvo_funcs import Galvo
+from pysrs.helpers.galvo_funcs import Galvo
 import matplotlib.pyplot as plt
 from PIL import Image, ImageTk, ImageDraw, ImageOps
 

@@ -4,7 +4,7 @@ import numpy as np
 from PIL import Image
 from tkinter import messagebox
 
-from .rpoc2 import build_rpoc_wave
+from ..old_utils.rpoc2 import build_rpoc_wave
 
 class Galvo:
     def __init__(self, config, rpoc_mask=None, rpoc_do_chan=None, rpoc_mode=None, dwell_multiplier=2.0, **kwargs):
