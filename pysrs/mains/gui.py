@@ -398,7 +398,6 @@ class GUI:
         for col in range(3):
             self.prior_stage_frame.columnconfigure(col, weight=1)
 
-        # Port Entry
         ttk.Label(self.prior_stage_frame, text="Port (COM #)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
         self.prior_port_entry = ttk.Entry(self.prior_stage_frame, width=10)
         self.prior_port_entry.insert(0, "4")
@@ -407,19 +406,16 @@ class GUI:
         self.prior_port_entry.bind("<FocusOut>", self._on_prior_port_changed)
         self.prior_port_entry.bind("<Return>", self._on_prior_port_changed)
 
-        # Z Scan Activation Checkbox
-        self.z_scan_enabled = tk.BooleanVar(value=False)
+        self.zscan_enabled = tk.BooleanVar(value=False)
         self.zscan_enable_check = ttk.Checkbutton(
             self.prior_stage_frame,
             text="Enable Z-Scan",
-            variable=self.z_scan_enabled,
+            variable=self.zscan_enabled,
             command=self.toggle_zscan_fields
         )
         self.zscan_enable_check.grid(row=1, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
-        ###########################################################
-        ########## Z STAGE MANUAL CONTROLS (Box 1) ################
-        ###########################################################
+
         self.z_manual_frame = ttk.LabelFrame(self.prior_stage_frame, text="Z Stage Manual Controls", padding=(12, 12))
         self.z_manual_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=5)
         for col in range(3):
@@ -453,9 +449,6 @@ class GUI:
                                              command=lambda: threading.Thread(target=self.run_autofocus, daemon=True).start())
         self.prior_focus_button.grid(row=2, column=2, rowspan=2, padx=5, pady=5, sticky="ew")
 
-        ###########################################################
-        ########## Z-SCAN SETTINGS (Box 2) #########################
-        ###########################################################
         self.z_scan_frame = ttk.LabelFrame(self.prior_stage_frame, text="Z-Scan Settings", padding=(12, 12))
         self.z_scan_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=5)
         for col in range(3):
@@ -639,7 +632,7 @@ class GUI:
             self.prior_port_entry.insert(0, old_val)
 
     def toggle_zscan_fields(self):
-        state = "normal" if self.z_scan_enabled.get() else "disabled"
+        state = "normal" if self.zscan_enabled.get() else "disabled"
         for widget in [self.entry_z_start, self.entry_z_stop, self.entry_z_steps]:
             widget.configure(state=state)
 

@@ -78,8 +78,8 @@ def acquire(gui, continuous=False, startup=False, auxilary=False):
                 try:
                     port = int(gui.prior_port_entry.get().strip())
                     prior.connect_prior(port)
-                    start = float(gui.entry_z_start.get().strip())
-                    stop = float(gui.entry_z_stop.get().strip())
+                    start = int(10*float(gui.entry_z_start.get().strip())) # convert to 100s of nms, prior stage native units
+                    stop = int(10*float(gui.entry_z_stop.get().strip()))
                     positions = [start + i * (stop - start) / (num_steps - 1) for i in range(num_steps)] if num_steps > 1 else [start]
                 except Exception as e:
                     messagebox.showerror("Prior Z-Stage Error", str(e))
