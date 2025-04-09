@@ -10,15 +10,12 @@ warnings.filterwarnings("ignore", category=DaqWarning, message=".*200011.*")
 
 def run_scan(ai_channels, galvo, mode="standard", mask=None, dwell_multiplier=2.0,
              modulate=False, mod_do_chans=None, mod_masks=None):
-    
-    if isinstance(ai_channels, str): # remove?
-        ai_channels = [ai_channels] 
+    if isinstance(ai_channels, str):
+        ai_channels = [ai_channels]
 
-    # python moment
     has_mods = modulate and mod_do_chans and mod_masks and (len(mod_do_chans) == len(mod_masks))
 
     if mode == 'variable':
-        # use the first mask in variable mode, other masks are ignored
         gen_mask = mod_masks[0] if has_mods else mask
         if gen_mask is None:
             raise ValueError("Variable dwell mode requires a valid mask.")
@@ -38,6 +35,7 @@ def run_scan(ai_channels, galvo, mode="standard", mask=None, dwell_multiplier=2.
             ao_task.ao_channels.add_ao_voltage_chan(f"{galvo.device}/{chan}")
         for ch in ai_channels:
             ai_task.ai_channels.add_ai_voltage_chan(ch)
+
         ao_task.timing.cfg_samp_clk_timing(
             rate=galvo.rate,
             sample_mode=AcquisitionType.FINITE,
@@ -54,7 +52,7 @@ def run_scan(ai_channels, galvo, mode="standard", mask=None, dwell_multiplier=2.
             ttl_signals = []
             for m in mod_masks:
                 m_arr = np.array(m) if isinstance(m, Image.Image) else m
-                m_arr = m_arr > 0.5  # threshold conversion
+                m_arr = m_arr > 0.5
                 padded = []
                 for row in range(galvo.numsteps_y):
                     padded_row = np.concatenate((
@@ -63,7 +61,6 @@ def run_scan(ai_channels, galvo, mode="standard", mask=None, dwell_multiplier=2.
                         np.zeros(galvo.extrasteps_right, dtype=bool)
                     ))
                     padded.append(padded_row)
-
                 flat = np.repeat(np.array(padded).ravel(), galvo.pixel_samples).astype(bool)
                 ttl_signals.append(flat)
             
@@ -78,24 +75,16 @@ def run_scan(ai_channels, galvo, mode="standard", mask=None, dwell_multiplier=2.
                 )
                 do_task.write(ttl_signals[0].tolist(), auto_start=False)
             else:
-                ttl_matrix = np.array(ttl_signals, dtype=bool)  
-                packed_ttl = np.zeros(total_samps, dtype=np.uint8)
-                for bit, line in enumerate(ttl_matrix):
-                    packed_ttl |= (line.astype(np.uint8) << bit) # i feel rly coool writing this
-                
-                line_string = ",".join([f"{galvo.device}/{chan}" for chan in mod_do_chans])
-                do_task.do_channels.add_do_chan(
-                    line_string,
-                    line_grouping=LineGrouping.CHAN_FOR_ALL_LINES
-                )
+                for chan in mod_do_chans:
+                    do_task.do_channels.add_do_chan(f"{galvo.device}/{chan}")
                 do_task.timing.cfg_samp_clk_timing(
                     rate=galvo.rate,
                     source=f"/{galvo.device}/ao/SampleClock",
                     sample_mode=AcquisitionType.FINITE,
                     samps_per_chan=total_samps
                 )
-                do_task.write([0] * total_samps, auto_start=True)
-                do_task.write(packed_ttl.tolist(), auto_start=False)
+                data_to_write = [sig.tolist() for sig in ttl_signals]
+                do_task.write(data_to_write, auto_start=False)
 
         ao_task.write(composite_wave, auto_start=False)
         ai_task.start()

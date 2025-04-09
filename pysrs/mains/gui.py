@@ -388,7 +388,7 @@ class GUI:
 
 
         ###########################################################
-        #################### 5. PRIOR STAGE #######################
+        ################ PRIOR STAGE SETTINGS #####################
         ###########################################################
         self.prior_pane = CollapsiblePane(self.sidebar, text='Prior Stage Settings', gui=self)
         self.prior_pane.pack(fill="x", padx=10, pady=5)
@@ -398,6 +398,7 @@ class GUI:
         for col in range(3):
             self.prior_stage_frame.columnconfigure(col, weight=1)
 
+        # Port Entry
         ttk.Label(self.prior_stage_frame, text="Port (COM #)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
         self.prior_port_entry = ttk.Entry(self.prior_stage_frame, width=10)
         self.prior_port_entry.insert(0, "4")
@@ -406,42 +407,81 @@ class GUI:
         self.prior_port_entry.bind("<FocusOut>", self._on_prior_port_changed)
         self.prior_port_entry.bind("<Return>", self._on_prior_port_changed)
 
-        ttk.Label(self.prior_stage_frame, text="Set Z Height (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="w")
-        self.prior_z_entry = ttk.Entry(self.prior_stage_frame, width=10)
-        self.apply_feedback_to_entry(self.prior_z_entry)
-        self.prior_z_entry.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
-        self.prior_z_entry.insert(0, "940")
-
-        self.prior_move_z_button = ttk.Button(self.prior_stage_frame, text="Move Z", command=self.move_prior_stage_z)
-        self.prior_move_z_button.grid(row=1, column=2, columnspan=1, pady=5, sticky="ew")
-
-        ttk.Label(self.prior_stage_frame, text="Set X Y").grid(row=2, column=0, padx=5, pady=3, sticky="w")
-        self.prior_pos_entry = ttk.Entry(self.prior_stage_frame, width=10)
-        self.apply_feedback_to_entry(self.prior_pos_entry)
-        self.prior_pos_entry.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
-        self.prior_pos_entry.insert(0, "1000, 1000")
-
-        self.prior_move_pos_button = ttk.Button(self.prior_stage_frame, text='Move X Y', command=self.move_prior_stage_xy)
-        self.prior_move_pos_button.grid(row=2, column=2, columnspan=1, pady=5, sticky='ew')
-
-        ttk.Label(self.prior_stage_frame, text='Auto-focus chan:').grid(row=3, column=0, sticky='e', padx=5, pady=5)
-        self.af_channel_var = tk.StringVar()
-        self.af_channel_entry = ttk.Entry(self.prior_stage_frame, textvariable=self.af_channel_var)
-        self.af_channel_entry.insert(0, '505')
-        self.af_channel_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
-
-        ttk.Label(self.prior_stage_frame, text='Spacing (µm):').grid(row=4, column=0, sticky='e', padx=5, pady=5)
-        self.af_spacing_var = tk.StringVar()
-        self.af_spacing_entry = ttk.Entry(self.prior_stage_frame, textvariable=self.af_spacing_var)
-        self.af_spacing_entry.insert(0, '1')
-        self.af_spacing_entry.grid(row=4, column=1, padx=5, pady=5, sticky="ew")
-
-        focus_button = ttk.Button(
+        # Z Scan Activation Checkbox
+        self.z_scan_enabled = tk.BooleanVar(value=False)
+        self.zscan_enable_check = ttk.Checkbutton(
             self.prior_stage_frame,
-            text='Auto-Focus',
-            command=lambda: threading.Thread(target=self.run_autofocus, daemon=True).start()
+            text="Enable Z-Scan",
+            variable=self.z_scan_enabled,
+            command=self.toggle_zscan_fields
         )
-        focus_button.grid(row=3, column=2, columnspan=1, rowspan=2, padx=5, pady=5, sticky="ew")
+        self.zscan_enable_check.grid(row=1, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+
+        ###########################################################
+        ########## Z STAGE MANUAL CONTROLS (Box 1) ################
+        ###########################################################
+        self.z_manual_frame = ttk.LabelFrame(self.prior_stage_frame, text="Z Stage Manual Controls", padding=(12, 12))
+        self.z_manual_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=5)
+        for col in range(3):
+            self.z_manual_frame.columnconfigure(col, weight=1)
+
+        ttk.Label(self.z_manual_frame, text="Set Z Height (µm)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
+        self.prior_z_entry = ttk.Entry(self.z_manual_frame, width=10)
+        self.prior_z_entry.insert(0, "940")
+        self.apply_feedback_to_entry(self.prior_z_entry)
+        self.prior_z_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
+        self.prior_move_z_button = ttk.Button(self.z_manual_frame, text="Move Z", command=self.move_prior_stage_z)
+        self.prior_move_z_button.grid(row=0, column=2, padx=5, pady=3, sticky="ew")
+
+        ttk.Label(self.z_manual_frame, text="Set X Y").grid(row=1, column=0, padx=5, pady=3, sticky="w")
+        self.prior_pos_entry = ttk.Entry(self.z_manual_frame, width=10)
+        self.prior_pos_entry.insert(0, "1000, 1000")
+        self.apply_feedback_to_entry(self.prior_pos_entry)
+        self.prior_pos_entry.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
+        self.prior_move_pos_button = ttk.Button(self.z_manual_frame, text="Move X Y", command=self.move_prior_stage_xy)
+        self.prior_move_pos_button.grid(row=1, column=2, padx=5, pady=3, sticky="ew")
+
+        ttk.Label(self.z_manual_frame, text="Auto-focus chan:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        self.af_channel_var = tk.StringVar(value="505")
+        self.af_channel_entry = ttk.Entry(self.z_manual_frame, textvariable=self.af_channel_var, width=10)
+        self.af_channel_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Label(self.z_manual_frame, text="Spacing (µm):").grid(row=3, column=0, sticky="e", padx=5, pady=5)
+        self.af_spacing_var = tk.StringVar(value="1")
+        self.af_spacing_entry = ttk.Entry(self.z_manual_frame, textvariable=self.af_spacing_var, width=10)
+        self.af_spacing_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
+        self.prior_focus_button = ttk.Button(self.z_manual_frame, text="Auto-Focus",
+                                             command=lambda: threading.Thread(target=self.run_autofocus, daemon=True).start())
+        self.prior_focus_button.grid(row=2, column=2, rowspan=2, padx=5, pady=5, sticky="ew")
+
+        ###########################################################
+        ########## Z-SCAN SETTINGS (Box 2) #########################
+        ###########################################################
+        self.z_scan_frame = ttk.LabelFrame(self.prior_stage_frame, text="Z-Scan Settings", padding=(12, 12))
+        self.z_scan_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=5)
+        for col in range(3):
+            self.z_scan_frame.columnconfigure(col, weight=1)
+
+        ttk.Label(self.z_scan_frame, text="Z Start (µm)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
+        self.entry_z_start = ttk.Entry(self.z_scan_frame, width=10)
+        self.entry_z_start.insert(0, "900")
+        self.apply_feedback_to_entry(self.entry_z_start)
+        self.entry_z_start.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
+
+        ttk.Label(self.z_scan_frame, text="Z Stop (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="w")
+        self.entry_z_stop = ttk.Entry(self.z_scan_frame, width=10)
+        self.entry_z_stop.insert(0, "1000")
+        self.apply_feedback_to_entry(self.entry_z_stop)
+        self.entry_z_stop.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
+
+        ttk.Label(self.z_scan_frame, text="Number of Steps").grid(row=2, column=0, padx=5, pady=3, sticky="w")
+        self.entry_z_steps = ttk.Entry(self.z_scan_frame, width=10)
+        self.entry_z_steps.insert(0, "10")
+        self.apply_feedback_to_entry(self.entry_z_steps)
+        self.entry_z_steps.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
+
+        self.toggle_zscan_fields()
+
+
 
 
 
@@ -597,6 +637,11 @@ class GUI:
             messagebox.showerror("Value Error", f"Invalid Prior port {val}. Reverting.")
             self.prior_port_entry.delete(0, tk.END)
             self.prior_port_entry.insert(0, old_val)
+
+    def toggle_zscan_fields(self):
+        state = "normal" if self.z_scan_enabled.get() else "disabled"
+        for widget in [self.entry_z_start, self.entry_z_stop, self.entry_z_steps]:
+            widget.configure(state=state)
 
 
     def move_prior_stage_z(self):
