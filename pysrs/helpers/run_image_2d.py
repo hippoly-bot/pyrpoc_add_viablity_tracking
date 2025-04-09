@@ -137,7 +137,7 @@ def partition_and_average(ai_data_1d, mask, pixel_map, galvo):
             pixel_values_2d[row_idx, col_idx] = np.mean(pixel_block)
     return pixel_values_2d
 
-
+import os
 if __name__ == "__main__":
     config = {
         "numsteps_x": 512,

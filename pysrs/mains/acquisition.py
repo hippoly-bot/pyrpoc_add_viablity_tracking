@@ -104,7 +104,7 @@ def acquire_single(gui, channels, galvo, move_z=None):
         if gui.simulation_mode.get():
             data_list = generate_data(len(channels), config=gui.config)
         else:
-            rpoc_enabled = gui.rpoc_mask is not None
+            rpoc_enabled = hasattr(gui, 'mod_masks')
             mode = 'variable' if gui.var_dwell_var.get() else 'standard'
 
             mod_do_chans = []
@@ -122,7 +122,6 @@ def acquire_single(gui, channels, galvo, move_z=None):
                 ai_channels=channels,
                 galvo=galvo,
                 mode=mode,
-                mask=gui.rpoc_mask if rpoc_enabled else None,
                 dwell_multiplier=gui.dwell_mult_var.get(),
                 modulate=bool(mod_do_chans),  # only True if any channels enabled
                 mod_do_chans=mod_do_chans,
