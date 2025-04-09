@@ -45,16 +45,21 @@ class Galvo:
 
     def gen_raster(self):
         total_rowsamples = self.pixel_samples * self.total_x
+        self.total_samples = total_rowsamples * self.total_y
 
-        # dont double count the boundaries, so endpoint=False
-        x_row = np.linspace(self.offset_x - self.amp_x,
-                            self.offset_x + self.amp_x,
-                            self.total_x, endpoint=False)
-        x_waveform = np.tile(np.repeat(x_row, self.pixel_samples), self.total_y)
+        single_row_ramp = np.linspace(
+            self.offset_x - self.amp_x,
+            self.offset_x + self.amp_x,
+            total_rowsamples,
+            endpoint=False
+        )
+        x_waveform = np.tile(single_row_ramp, self.total_y)
 
-        y_steps = np.linspace(self.offset_y + self.amp_y,
-                              self.offset_y - self.amp_y,
-                              self.total_y)
+        y_steps = np.linspace(
+            self.offset_y + self.amp_y,
+            self.offset_y - self.amp_y,
+            self.total_y
+        )
         y_waveform = np.repeat(y_steps, total_rowsamples)
 
         composite = np.vstack([x_waveform, y_waveform])
@@ -71,16 +76,18 @@ class Galvo:
                 raise ValueError("RPOC wave length does not match total scan length!")
             composite = np.vstack([composite, rpoc_wave])
 
-        # had some runs where x was the wrong shape, could not figure out why so just pad it 
-        if len(x_waveform) < self.total_samples:
-            x_waveform = np.pad(x_waveform,
-                                (0, self.total_samples - len(x_waveform)),
-                                constant_values=x_waveform[-1])
+        if x_waveform.size < self.total_samples:
+            x_waveform = np.pad(
+                x_waveform,
+                (0, self.total_samples - x_waveform.size),
+                constant_values=x_waveform[-1]
+            )
         else:
             x_waveform = x_waveform[:self.total_samples]
         composite[0] = x_waveform
 
         return composite
+
 
     def gen_variable_waveform(self, mask, dwell_multiplier):
         dwell = self.dwell

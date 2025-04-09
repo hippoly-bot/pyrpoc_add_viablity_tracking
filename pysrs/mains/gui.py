@@ -50,9 +50,9 @@ class GUI:
             'rate': 1e6,
             'numsteps_x': 512,
             'numsteps_y': 512,
-            'extrasteps_left': 100,
+            'extrasteps_left': 200,
             'extrasteps_right': 20,
-            'dwell': 5e-6
+            'dwell': 2.5e-6
         }
         self.param_entries = {}
 
@@ -62,7 +62,6 @@ class GUI:
             'single_um': 25000
         }
         self.hyperspectral_enabled = tk.BooleanVar(value=False)
-        self.rpoc_enabled = tk.BooleanVar(value=False)
         self.mask_file_path = tk.StringVar(value="No mask loaded")
         self.zaber_stage = ZaberStage(port=self.config['zaber_chan'])
         self.rpoc_mode_var = tk.StringVar(value='standard')
@@ -340,8 +339,8 @@ class GUI:
         self.zaber_port_entry.insert(0, self.config['zaber_chan'])
         self.zaber_port_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
 
-        self.zaber_port_entry.bind("<FocusOut>", self._on_zaber_port_changed)
-        self.zaber_port_entry.bind("<Return>", self._on_zaber_port_changed)
+        self.zaber_port_entry.bind("<FocusOut>", self.on_zaber_port_changed)
+        self.zaber_port_entry.bind("<Return>", self.on_zaber_port_changed)
 
         self.delay_hyperspec_checkbutton = ttk.Checkbutton(
             self.delay_stage_frame, text='Enable Hyperspectral Scanning',
@@ -459,7 +458,6 @@ class GUI:
         for col in range(4):
             self.rpoc_frame.columnconfigure(col, weight=0)
 
-
         newmask_button = ttk.Button(self.rpoc_frame, text='Create mask from:', command=self.create_mask, width=14)
         newmask_button.grid(row=0, column=0, sticky="ew", padx=5, pady=2)
 
@@ -470,19 +468,15 @@ class GUI:
         self.rpoc_channel_entry.bind("<Return>", self.finalize_selection)
         self.rpoc_channel_entry.bind("<FocusOut>", self.finalize_selection)
 
-        
-
         ttk.Separator(self.rpoc_frame, orient="horizontal").grid(row=1, column=0, columnspan=4, sticky="ew", pady=6)
 
-        # AOM Modulation Controls
-        self.modulate_lasers_var = tk.BooleanVar(value=False)
-        modulate_lasers_check = ttk.Checkbutton(
-            self.rpoc_frame,
-            text="Enable AOM Modulation",
-            variable=self.modulate_lasers_var,
-            command=self.update_modulation_channels
+        # Show mask checkbox (moved up)
+        self.show_mask_var = tk.BooleanVar(value=False)
+        show_mask_check = ttk.Checkbutton(
+            self.rpoc_frame, text='Show RPOC Mask',
+            variable=self.show_mask_var, command=self.toggle_rpoc_fields
         )
-        modulate_lasers_check.grid(row=2, column=0, columnspan=4, sticky="w", pady=2)
+        show_mask_check.grid(row=2, column=0, padx=5, pady=2, sticky="w")
 
         ttk.Label(self.rpoc_frame, text="# of Modulation Channels:").grid(
             row=3, column=0, sticky="e", padx=5, pady=2
@@ -498,7 +492,7 @@ class GUI:
         for col in range(4):
             self.mod_channels_frame.columnconfigure(col, weight=0)
 
-        # Variable Dwell Time
+        # Variable dwell time
         self.var_dwell_var = tk.BooleanVar(value=False)
         var_dwell_check = ttk.Checkbutton(
             self.rpoc_frame,
@@ -507,24 +501,10 @@ class GUI:
         )
         var_dwell_check.grid(row=5, column=0, columnspan=4, sticky="w", pady=(0, 10))
 
-        ttk.Separator(self.rpoc_frame, orient="horizontal").grid(row=6, column=0, columnspan=4, sticky="ew", pady=6)
-
-        # Mask display & activation
-        self.show_mask_var = tk.BooleanVar(value=False)
-        show_mask_check = ttk.Checkbutton(
-            self.rpoc_frame, text='Show RPOC Mask',
-            variable=self.show_mask_var, command=self.toggle_rpoc_fields
-        )
-        show_mask_check.grid(row=7, column=0, padx=5, pady=2, sticky="w")
-
-        self.rpoc_enabled = tk.BooleanVar(value=False)
-        activate_rpoc_check = ttk.Checkbutton(
-            self.rpoc_frame, text='Activate RPOC Mask',
-            variable=self.rpoc_enabled, command=self.toggle_rpoc_fields
-        )
-        activate_rpoc_check.grid(row=7, column=1, padx=5, pady=2, sticky="w")
+        # Removed lower horizontal divider
 
         self.update_modulation_channels()
+
 
 
 
@@ -559,21 +539,12 @@ class GUI:
     ###########################################################
     ##################### GUI BACKEND #########################
     ###########################################################
-    def _on_rpoc_mode_changed(self):
-        if self.rpoc_mode_var.get() == 'standard':
-            self.mask_ttl_entry.configure(state='normal')
-            self.dwell_mult_entry.configure(state='disabled')
-        else:
-            self.mask_ttl_entry.configure(state='disabled')
-            self.dwell_mult_entry.configure(state='normal')
-
-            
     def on_global_click(self, event):
         # helper for clicking out of widgets, makes the GUI more tactile i feel
         if not isinstance(event.widget, tk.Entry):
             self.root.focus_set()
 
-    def _on_zaber_port_changed(self, event):
+    def on_zaber_port_changed(self, event):
         # immediately punish the user for being dumb if they enter the wrong port
         new_port = self.zaber_port_entry.get().strip()
         old_port = self.config['zaber_chan']
@@ -711,7 +682,6 @@ class GUI:
 
         pil_image = Image.fromarray(image_data).convert("RGB")
 
-        # Import the PyQt editor function directly
         launch_pyqt_editor(preloaded_image=pil_image)
 
     def update_rpoc_options(self):
@@ -720,6 +690,51 @@ class GUI:
                 self.rpoc_channel_var.set(self.config["channel_names"][0])
         else:
             self.rpoc_channel_var.set("No channels available")
+
+    def update_modulation_channels(self):
+        for child in self.mod_channels_frame.winfo_children():
+            child.destroy()
+        try:
+            num = int(self.num_mod_channels_var.get())
+        except ValueError:
+            num = 0
+
+        self.mod_ttl_channel_vars = []
+        self.mod_mask_vars = []
+        self.mod_mask_entries = []
+        self.mod_loadmask_buttons = []
+        self.mod_enabled_vars = []
+
+        ttk.Label(self.mod_channels_frame, text="DO Channel").grid(row=0, column=0, padx=5)
+        ttk.Label(self.mod_channels_frame, text="Mask File").grid(row=0, column=1, padx=5)
+        ttk.Label(self.mod_channels_frame, text="Enable").grid(row=0, column=3, padx=5)
+
+        for i in range(num):
+            ttl_var = tk.StringVar(value=f"port0/line{4+i}")
+            self.mod_ttl_channel_vars.append(ttl_var)
+
+            ttl_entry = ttk.Entry(self.mod_channels_frame, textvariable=ttl_var, width=12)
+            ttl_entry.grid(row=i+1, column=0, sticky="w", padx=5, pady=2)
+
+            mask_var = tk.StringVar(value="No mask loaded")
+            self.mod_mask_vars.append(mask_var)
+            mask_entry = ttk.Entry(self.mod_channels_frame, textvariable=mask_var, width=18, state="readonly")
+            mask_entry.grid(row=i+1, column=1, sticky="w", padx=5, pady=2)
+            self.mod_mask_entries.append(mask_entry)
+
+            load_btn = ttk.Button(
+                self.mod_channels_frame, text="Load",
+                command=lambda idx=i: self.load_mod_mask(idx), width=6
+            )
+            load_btn.grid(row=i+1, column=2, padx=5, pady=2)
+            self.mod_loadmask_buttons.append(load_btn)
+
+            enabled_var = tk.BooleanVar(value=False)
+            enabled_check = ttk.Checkbutton(self.mod_channels_frame, variable=enabled_var)
+            enabled_check.grid(row=i+1, column=3, padx=5, pady=2)
+            self.mod_enabled_vars.append(enabled_var)
+
+        self.mod_channels_frame.update_idletasks()
 
     def finalize_selection(self, event):
         current_text = self.rpoc_channel_var.get().strip()
@@ -744,46 +759,6 @@ class GUI:
             self.mask_file_path.set("No mask loaded")
             self.rpoc_mask = None
 
-    def update_modulation_channels(self):
-        for child in self.mod_channels_frame.winfo_children():
-            child.destroy()
-        try:
-            num = int(self.num_mod_channels_var.get())
-        except ValueError:
-            num = 0
-
-        self.mod_ttl_channel_vars = []
-        self.mod_mask_vars = []
-        self.mod_mask_entries = []
-        self.mod_loadmask_buttons = []
-
-        for i in range(num):
-            ttk.Label(self.mod_channels_frame, text=f"Mod {i+1}:").grid(
-                row=i, column=0, sticky="e", padx=5, pady=2
-            )
-            ttl_var = tk.StringVar(value=f"port0/line{4+i}")
-            self.mod_ttl_channel_vars.append(ttl_var)
-
-            ttl_entry = ttk.Entry(self.mod_channels_frame, textvariable=ttl_var, width=12)
-            ttl_entry.grid(row=i, column=1, sticky="w", padx=5, pady=2)
-
-            mask_var = tk.StringVar(value="No mask loaded")
-            self.mod_mask_vars.append(mask_var)
-            mask_entry = ttk.Entry(self.mod_channels_frame, textvariable=mask_var, width=18, state="readonly")
-            mask_entry.grid(row=i, column=2, sticky="w", padx=5, pady=2)
-            self.mod_mask_entries.append(mask_entry)
-
-            load_btn = ttk.Button(
-                self.mod_channels_frame, text="Load",
-                command=lambda idx=i: self.load_mod_mask(idx), width=6
-            )
-            load_btn.grid(row=i, column=3, padx=5, pady=2)
-            self.mod_loadmask_buttons.append(load_btn)
-
-        self.mod_channels_frame.update_idletasks()
-
-
-
 
     def load_mod_mask(self, idx):
         file_path = filedialog.askopenfilename(
@@ -793,14 +768,13 @@ class GUI:
         if file_path:
             filename = os.path.basename(file_path)
             self.mod_mask_vars[idx].set(filename)
-            # Optionally, store the loaded mask image in a dictionary.
             if not hasattr(self, 'mod_masks'):
                 self.mod_masks = {}
             try:
                 self.mod_masks[idx] = Image.open(file_path).convert('L')
             except Exception as e:
                 messagebox.showerror("Mask Error", f"Error loading mask: {e}")
-        else:
+        else: 
             self.mod_mask_vars[idx].set("No mask loaded")
 
 
@@ -911,11 +885,10 @@ class GUI:
             self.continuous_button.configure(state='normal')
 
     def toggle_rpoc_fields(self):
-        if self.show_mask_var.get() or self.rpoc_enabled.get(): 
+        if self.show_mask_var.get(): 
             if not hasattr(self, 'rpoc_mask') or self.rpoc_mask is None:
                 messagebox.showerror("Mask Error", "No valid mask loaded.")
                 self.show_mask_var.set(False)
-                self.rpoc_enabled.set(False)
                 return
 
         if self.show_mask_var.get():

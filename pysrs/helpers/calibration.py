@@ -4,7 +4,7 @@ import time, threading
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from pysrs.helpers.galvo_funcs import Galvo
-from pysrs.helpers.run_image_2d import raster_scan  # was lockin_scan before
+from pysrs.helpers.run_image_2d import run_scan  
 from pysrs.helpers.utils import generate_data
 
 # TODO: make the calibration plot dark mode because pretty
