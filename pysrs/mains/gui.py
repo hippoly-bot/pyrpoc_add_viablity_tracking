@@ -66,7 +66,6 @@ class GUI:
         self.zaber_stage = ZaberStage(port=self.config['zaber_chan'])
         self.rpoc_mode_var = tk.StringVar(value='standard')
         self.dwell_mult_var = tk.DoubleVar(value=2.0)
-        self.rpoc_mask = None
 
         self.channel_axes = []
         self.slice_x = []
@@ -734,7 +733,15 @@ class GUI:
             enabled_check.grid(row=i+1, column=3, padx=5, pady=2)
             self.mod_enabled_vars.append(enabled_var)
 
+            def make_callback(idx=i):
+                return lambda *_: self.refresh_display_masks()
+            enabled_var.trace_add('write', make_callback(i))
+
         self.mod_channels_frame.update_idletasks()
+
+    def refresh_display_masks(self):
+        if self.show_mask_var.get() and hasattr(self, "data") and self.data:
+            display.display_data(self, self.data)
 
     def finalize_selection(self, event):
         current_text = self.rpoc_channel_var.get().strip()
@@ -742,22 +749,6 @@ class GUI:
             self.show_feedback(self.rpoc_channel_entry)
         else:
             messagebox.showerror("Invalid Selection", f"'{current_text}' is not a valid channel.")
-
-    def update_mask(self):
-        file_path = filedialog.askopenfilename(
-            title="Select Mask File",
-            filetypes=[("Mask Files", "*.mask *.json *.txt *.png"), ("All Files", "*.*")]
-        )
-        if file_path:
-            filename = os.path.basename(file_path)
-            self.mask_file_path.set(filename)
-            try:
-                self.rpoc_mask = Image.open(file_path).convert('L')
-            except Exception as e:
-                messagebox.showerror("Mask Error", f"Error loading mask: {e}")
-        else:
-            self.mask_file_path.set("No mask loaded")
-            self.rpoc_mask = None
 
 
     def load_mod_mask(self, idx):
@@ -885,16 +876,20 @@ class GUI:
             self.continuous_button.configure(state='normal')
 
     def toggle_rpoc_fields(self):
-        if self.show_mask_var.get(): 
-            if not hasattr(self, 'rpoc_mask') or self.rpoc_mask is None:
-                messagebox.showerror("Mask Error", "No valid mask loaded.")
+        if self.show_mask_var.get():
+            has_valid_mask = False
+            if hasattr(self, "mod_enabled_vars") and hasattr(self, "mod_masks"):
+                for idx, var in enumerate(self.mod_enabled_vars):
+                    if var.get() and idx in self.mod_masks:
+                        has_valid_mask = True
+                        break
+
+            if not has_valid_mask:
+                messagebox.showerror("Mask Error", "No enabled mask is loaded.")
                 self.show_mask_var.set(False)
                 return
 
-        if self.show_mask_var.get():
-            display.display_data(self, self.data)  
-
-        if self.data is not None:
+        if hasattr(self, 'data') and self.data:
             display.display_data(self, self.data)
 
 

@@ -153,35 +153,58 @@ def display_data(gui, data_list):
         if "mask_handle" not in ch_ax:
             ch_ax["mask_handle"] = None
 
-        # === MASK DISPLAY PER CHANNEL ===
-        if gui.show_mask_var.get() and hasattr(gui, "rpoc_mask") and gui.rpoc_mask is not None:
-            mask = np.array(gui.rpoc_mask)
-            mask = (mask > 128)
+        if gui.show_mask_var.get() and hasattr(gui, "mod_masks"):
+            # Pick some visually distinct RGBA colors
+            overlay_colors = [
+                (1.0, 0.0, 0.0, 0.4),  # red
+                (0.0, 1.0, 0.0, 0.4),  # green
+                (0.0, 0.0, 1.0, 0.4),  # blue
+                (1.0, 1.0, 0.0, 0.4),  # yellow
+                (1.0, 0.0, 1.0, 0.4),  # magenta
+                (0.0, 1.0, 1.0, 0.4),  # cyan
+            ]
 
-            if mask.shape != (ny, nx):
-                from PIL import Image
-                temp_pil = Image.fromarray(mask.astype(np.uint8) * 255)
-                temp_pil = temp_pil.resize((nx, ny), Image.NEAREST)
-                mask = np.array(temp_pil) > 128
+            if "mask_handles" not in ch_ax:
+                ch_ax["mask_handles"] = []
 
-            # Shade of green with transparency
-            mask_rgba = np.zeros((ny, nx, 4), dtype=float)
-            mask_rgba[..., 1] = mask   # green channel
-            mask_rgba[..., 3] = 0.4 * mask  # alpha
+            # Remove old overlays
+            for h in ch_ax["mask_handles"]:
+                h.remove()
+            ch_ax["mask_handles"] = []
 
-            extent = [x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]]
+            for idx, enabled_var in enumerate(getattr(gui, "mod_enabled_vars", [])):
+                if not enabled_var.get():
+                    continue
+                if idx not in gui.mod_masks:
+                    continue
+                mask_img = gui.mod_masks[idx]
+                mask_arr = np.array(mask_img.convert('L')) > 128
 
-            if ch_ax["mask_handle"] is None:
-                mask_im = ax_main.imshow(mask_rgba, extent=extent, origin='upper', aspect='equal')
-                ch_ax["mask_handle"] = mask_im
-            else:
-                ch_ax["mask_handle"].set_data(mask_rgba)
-                ch_ax["mask_handle"].set_extent(extent)
+                # Resize if needed
+                if mask_arr.shape != (ny, nx):
+                    from PIL import Image
+                    mask_arr = Image.fromarray(mask_arr.astype(np.uint8) * 255)
+                    mask_arr = mask_arr.resize((nx, ny), Image.NEAREST)
+                    mask_arr = np.array(mask_arr) > 128
 
-            ch_ax["mask_handle"].set_visible(True)
+                # Make RGBA overlay
+                color = overlay_colors[idx % len(overlay_colors)]
+                rgba_mask = np.zeros((ny, nx, 4), dtype=np.float32)
+                rgba_mask[..., 0] = color[0] * mask_arr
+                rgba_mask[..., 1] = color[1] * mask_arr
+                rgba_mask[..., 2] = color[2] * mask_arr
+                rgba_mask[..., 3] = color[3] * mask_arr
+
+                overlay = ax_main.imshow(rgba_mask, extent=[x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]],
+                                         origin='upper', aspect='equal')
+                ch_ax["mask_handles"].append(overlay)
         else:
-            if ch_ax["mask_handle"] is not None:
-                ch_ax["mask_handle"].set_visible(False)
+            # Hide/remove overlays
+            if "mask_handles" in ch_ax:
+                for h in ch_ax["mask_handles"]:
+                    h.remove()
+                ch_ax["mask_handles"] = []
+
 
 
     gui.canvas.draw_idle()
