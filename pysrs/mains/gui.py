@@ -705,21 +705,14 @@ class GUI:
         if self.data is None or len(np.shape(self.data)) != 3:
             messagebox.showerror("Data Error", "No valid data available. Acquire an image first.")
             return
-        selected_channel = self.rpoc_channel_var.get()
-        if selected_channel not in self.config["channel_names"]:
-            messagebox.showerror("Selection Error", "Select a valid input channel.")
-            return
-        channel_index = self.config["channel_names"].index(selected_channel)
-        if channel_index >= np.shape(self.data)[0]:
-            messagebox.showerror("Data Mismatch", f"No data at channel {selected_channel}.")
-            return
 
-        image_data = self.data[channel_index]
-        image_data = (image_data / np.max(image_data) * 255).astype(np.uint8)
+        images = []
+        for i in range(np.shape(self.data)[0]):
+            plane = self.data[i]
+            norm = (plane / np.max(plane) * 255).astype(np.uint8)
+            images.append(Image.fromarray(norm).convert("RGB"))
 
-        pil_image = Image.fromarray(image_data).convert("RGB")
-
-        launch_pyqt_editor(preloaded_image=pil_image)
+        launch_pyqt_editor(preloaded_images=images, channel_names=self.config["channel_names"])
 
     def update_rpoc_options(self):
         if self.config["channel_names"]:

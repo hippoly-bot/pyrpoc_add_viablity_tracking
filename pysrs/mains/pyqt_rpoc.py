@@ -1,7 +1,9 @@
 import sys
 import numpy as np
-from PIL import Image, ImageDraw
-import cv2
+from PIL import Image, ImageDraw 
+from PIL.ImageQt import ImageQt # PyQt6 depdendent, somehow need to make sure this dependency is registered
+import cv2 
+from cellpose import models
 import random
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QFileDialog,
@@ -15,11 +17,13 @@ from PyQt5.QtCore import Qt, QPointF, QRectF, QPoint, QVariant
 from superqt import QRangeSlider
 
 class ImageViewer(QGraphicsView):
-    def __init__(self, scene, roi_table, params):
+    def __init__(self, scene, roi_table, params, update_mask_cb=None, update_label_cb=None):
         super().__init__(scene)
         self.setRenderHints(self.renderHints() | QPainter.Antialiasing)
         self.roi_table = roi_table
         self.params = params
+        self.update_mask_cb = update_mask_cb
+        self.update_label_cb = update_label_cb
 
         self.setMouseTracking(True)
         self.setDragMode(QGraphicsView.NoDrag)
@@ -182,9 +186,13 @@ class ImageViewer(QGraphicsView):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_M:
             self.show_rois = not self.show_rois
+            if self.update_mask_cb:
+                self.update_mask_cb(self.show_rois)
             self.update_roi_visibility()
         elif event.key() == Qt.Key_N:
             self.show_labels = not self.show_labels
+            if self.update_label_cb:
+                self.update_label_cb(self.show_labels)
             self.update_roi_visibility()
         else:
             super().keyPressEvent(event)
@@ -244,50 +252,59 @@ class Params:  # for global parameter management
         self.high = 200
          
 class MainWindow(QMainWindow):
-    def __init__(self, preload_image=None):
+    def __init__(self, preloaded_images=None, channel_names=None):
         super().__init__()
         self.setWindowTitle('New RPOC Editor')
-        self.params = Params() 
-        self.loaded_img = None  # will store a grayscale numpy array
+        self.params = Params()
+        self.image_layers = []  # stores QPixmap per channel
+        self.image_visibility = []  # bool flags
+        self.channel_names = channel_names if channel_names else []
+        self.loaded_img = None
 
-        # full right side
         self.roi_table = QTableWidget(0, 5)
         self.roi_table.setHorizontalHeaderLabels(['ROI Name', 'Coordinates', 'Lower Threshold', 'Upper Threshold', 'Modulation Level'])
 
-        # top on left
-        load_button = QPushButton('Load Image')
-        load_button.clicked.connect(self.load_image)
 
-        # middle left
-        self.help_label = QLabel('Press "M" to toggle mask visibility\n'
-                                 'Press "N" to toggle label visibility\n'
-                                 'Right-click row in table to delete ROI\n'
-                                 'Press "P" to preview the final mask')
+        self.toggle_layout = QHBoxLayout()
+        self.channel_checkboxes = []
+
+        if preloaded_images:
+            for i, pil_image in enumerate(preloaded_images):
+                qimage = ImageQt(ImageQt(pil_image))
+                pixmap = QPixmap.fromImage(qimage)
+                self.image_layers.append(pixmap)
+                self.image_visibility.append(True)
+
+                checkbox = QCheckBox(f"{channel_names[i]} [{i+1}]")
+                checkbox.setChecked(True)
+                checkbox.stateChanged.connect(lambda state, ch=i: self.on_channel_toggle(ch, state))
+                self.channel_checkboxes.append(checkbox)
+                self.toggle_layout.addWidget(checkbox)
+
+        self.help_label = QLabel("Check to show/hide channels. Press keys 1,2,... to toggle.")
         self.threshold_slider = QRangeSlider(Qt.Horizontal)
         self.threshold_slider.setMinimum(0)
         self.threshold_slider.setMaximum(255)
-        self.threshold_slider.setValue((20,80))
+        self.threshold_slider.setValue((20, 80))
         self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
 
         self.save_button = QPushButton("Save Mask")
         self.save_button.clicked.connect(self.save_mask)
 
-        middle_controls_layout = QHBoxLayout()
-        middle_controls_layout.addWidget(self.help_label)
-        middle_controls_layout.addWidget(self.threshold_slider)
-        middle_controls_layout.addWidget(self.save_button)
+        mid_controls = QVBoxLayout()
+        mid_controls.addLayout(self.toggle_layout)
+        mid_controls.addWidget(self.help_label)
+        mid_controls.addWidget(self.threshold_slider)
+        mid_controls.addWidget(self.save_button)
 
-        # bottom left
         self.image_scene = QGraphicsScene()
         self.image_item = self.image_scene.addPixmap(QPixmap())  # Placeholder
-        self.image_view = ImageViewer(self.image_scene, self.roi_table, self.params)   
+        self.image_view = ImageViewer(self.image_scene, self.roi_table, self.params)
 
         layout = QHBoxLayout()
         left_layout = QVBoxLayout()
-        left_layout.addWidget(load_button) 
-        left_layout.addLayout(middle_controls_layout)
+        left_layout.addLayout(mid_controls)
         left_layout.addWidget(self.image_view)
-
         layout.addLayout(left_layout)
         layout.addWidget(self.roi_table)
 
@@ -295,19 +312,78 @@ class MainWindow(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        self.roi_table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.roi_table.customContextMenuRequested.connect(self.show_table_context_menu)
+        self.update_displayed_image()
 
-        preview_action = QAction("Preview Mask", self)
-        preview_action.setShortcut("P")
-        preview_action.triggered.connect(self.preview_mask)
-        self.addAction(preview_action)
+    def keyPressEvent(self, event):
+        if Qt.Key_1 <= event.key() <= Qt.Key_9:
+            idx = event.key() - Qt.Key_1
+            if 0 <= idx < len(self.image_layers):
+                self.image_visibility[idx] = not self.image_visibility[idx]
+                self.channel_checkboxes[idx].setChecked(self.image_visibility[idx])
+                self.update_displayed_image()
+        else:
+            super().keyPressEvent(event)
 
-        if preload_image is not None:
-            self.set_preloaded_image(preload_image)
+    def on_channel_toggle(self, idx, state):
+        self.image_visibility[idx] = bool(state)
+        self.update_displayed_image()
+
+
+
+    def run_cellpose_segmentation(self):
+        if self.loaded_img is None:
+            return
+    
+        self.cellpose_button.setText("Segmenting...")
+        self.cellpose_button.setEnabled(False)
+        QApplication.processEvents()
+
+        low, high = self.threshold_slider.value()
+        masked = self.loaded_img.copy()
+        masked[(masked < low) | (masked > high)] = 0
+
+        model = models.Cellpose(model_type='cyto3')
+        masks, _, _, _ = model.eval([masked], diameter=None, channels=[0, 0])
+        masks = masks[0]
+
+        n_rois = len(self.image_view.roi_items)
+
+        for mask_val in range(1, masks.max() + 1):
+            binary_mask = np.uint8(masks == mask_val) * 255
+            contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                continue
+
+            contour = contours[0]
+            path = QPainterPath()
+            points = []
+
+            for i, pt in enumerate(contour):
+                x, y = pt[0]
+                qpt = QPointF(x, y)
+                points.append(qpt)
+                if i == 0:
+                    path.moveTo(qpt)
+                else:
+                    path.lineTo(qpt)
+            path.closeSubpath()
+
+            color = self.image_view.get_random_color()
+            roi_item = self.image_scene.addPath(path, QPen(color, 2), QBrush(color))
+            roi_item.setOpacity(self.image_view.roi_opacity if self.image_view.show_rois else 0)
+            self.image_view.roi_items.append(roi_item)
+
+            label_item = self.image_view.create_roi_label(n_rois + 1, points)
+            self.image_view.roi_label_items.append(label_item)
+
+            self.image_view.add_roi_to_table(n_rois + 1, points)
+            n_rois += 1
+
+        self.cellpose_button.setText("Segment with Cellpose")
+        self.cellpose_button.setEnabled(True)
+
 
     def set_preloaded_image(self, pil_image):
-        # Ensure RGB format
         pil_image = pil_image.convert("RGB")
         img_array = np.array(pil_image)
 
@@ -329,23 +405,20 @@ class MainWindow(QMainWindow):
             self.update_displayed_image()
 
     def update_displayed_image(self):
-        if not hasattr(self, 'original_rgb_img') or self.original_rgb_img is None:
+        if not self.image_layers:
             return
 
-        low, high = self.threshold_slider.value()
-        gray = self.loaded_img
-        rgb = self.original_rgb_img.copy()
+        base_img = QImage(self.image_layers[0].toImage().size(), QImage.Format_RGB32)
+        base_img.fill(Qt.black)
+        painter = QPainter(base_img)
 
-        mask_out = (gray < low) | (gray > high)
-        rgb[mask_out] = [0, 0, 0]
+        for i, pixmap in enumerate(self.image_layers):
+            if self.image_visibility[i]:
+                painter.drawPixmap(0, 0, pixmap)
 
-        height, width, channels = rgb.shape
-        bytes_per_line = channels * width
-        qimage = QImage(rgb.data, width, height, bytes_per_line, QImage.Format_RGB888)
-        pixmap = QPixmap.fromImage(qimage)
-
-        self.image_item.setPixmap(pixmap)
-        self.image_scene.setSceneRect(QRectF(pixmap.rect()))
+        painter.end()
+        self.image_item.setPixmap(QPixmap.fromImage(base_img))
+        self.image_scene.setSceneRect(QRectF(base_img.rect()))
 
     def show_table_context_menu(self, pos):
         row = self.roi_table.indexAt(pos).row()
@@ -406,6 +479,14 @@ class MainWindow(QMainWindow):
     def on_threshold_changed(self, values):
         self.update_displayed_image()   # update visible pixel
         self.params.low, self.params.high = values
+
+    def toggle_mask_visibility(self, visible):
+        self.image_view.show_rois = visible
+        self.image_view.update_roi_visibility()
+
+    def toggle_label_visibility(self, visible):
+        self.image_view.show_labels = visible
+        self.image_view.update_roi_visibility()
 
     def generate_final_mask(self):
         if self.loaded_img is None:
@@ -501,7 +582,7 @@ class MainWindow(QMainWindow):
         cv2.imwrite(save_path, final_mask)
         print("Mask saved to:", save_path)
 
-def launch_pyqt_editor(preloaded_image=None):
+def launch_pyqt_editor(preloaded_images=None, channel_names=None):
     app = QApplication.instance()
     app_created = False
     if app is None:
@@ -509,7 +590,7 @@ def launch_pyqt_editor(preloaded_image=None):
         app_created = True
 
     set_dark_theme(app)
-    win = MainWindow(preload_image=preloaded_image)
+    win = MainWindow(preloaded_images=preloaded_images, channel_names=channel_names)
     win.resize(1200, 800)
     win.show()
 

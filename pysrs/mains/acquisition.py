@@ -1,9 +1,5 @@
-import threading
 import os
-import tkinter as tk
 from tkinter import messagebox
-import numpy as np
-from PIL import Image
 from pysrs.helpers.utils import generate_data, convert
 from pysrs.mains.display import display_data
 from pysrs.helpers.galvo_funcs import Galvo
