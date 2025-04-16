@@ -21,7 +21,7 @@ def run_scan(ai_channels, galvo, mode="standard", mask=None, dwell_multiplier=2.
             raise ValueError("Variable dwell mode requires a valid mask.")
         if isinstance(gen_mask, Image.Image):
             gen_mask = np.array(gen_mask)
-        gen_mask = gen_mask > 128
+        gen_mask = gen_mask > 0.49
 
         x_wave, y_wave, pixel_map = galvo.gen_variable_waveform(gen_mask, dwell_multiplier)
         composite_wave = np.vstack([x_wave, y_wave])
@@ -52,7 +52,7 @@ def run_scan(ai_channels, galvo, mode="standard", mask=None, dwell_multiplier=2.
             ttl_signals = []
             for m in mod_masks:
                 m_arr = np.array(m) if isinstance(m, Image.Image) else m
-                m_arr = m_arr > 0.5
+                m_arr = m_arr > 0.45
                 padded = []
                 for row in range(galvo.numsteps_y):
                     padded_row = np.concatenate((

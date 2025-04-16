@@ -1,7 +1,6 @@
-import sys
 import numpy as np
-from PIL import Image, ImageDraw 
-import cv2 
+from PIL import Image, ImageDraw
+import cv2
 from cellpose import models
 import random
 from PyQt5.QtWidgets import (
@@ -16,14 +15,11 @@ from PyQt5.QtCore import Qt, QPointF, QRectF, QPoint, QVariant
 from superqt import QRangeSlider
 
 class ImageViewer(QGraphicsView):
-    def __init__(self, scene, roi_table, params, main_window, update_mask_cb=None, update_label_cb=None):
+    def __init__(self, scene, roi_table, params):
         super().__init__(scene)
         self.setRenderHints(self.renderHints() | QPainter.Antialiasing)
         self.roi_table = roi_table
         self.params = params
-        self.main_window = main_window
-        self.update_mask_cb = update_mask_cb
-        self.update_label_cb = update_label_cb
 
         self.setMouseTracking(True)
         self.setDragMode(QGraphicsView.NoDrag)
@@ -101,8 +97,6 @@ class ImageViewer(QGraphicsView):
                 self.roi_label_items.append(roi_label)
 
                 self.add_roi_to_table(new_index, self.current_points)
-
-                self.main_window.roi_channel_flags.append(self.main_window.image_visibility.copy())  # FIXED
 
                 # reset path
                 self.current_path = None
@@ -188,13 +182,9 @@ class ImageViewer(QGraphicsView):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key_M:
             self.show_rois = not self.show_rois
-            if self.update_mask_cb:
-                self.update_mask_cb(self.show_rois)
             self.update_roi_visibility()
         elif event.key() == Qt.Key_N:
             self.show_labels = not self.show_labels
-            if self.update_label_cb:
-                self.update_label_cb(self.show_labels)
             self.update_roi_visibility()
         else:
             super().keyPressEvent(event)
@@ -254,87 +244,49 @@ class Params:  # for global parameter management
         self.high = 200
          
 class MainWindow(QMainWindow):
-    def __init__(self, preloaded_images=None, channel_names=None):
+    def __init__(self, preload_image=None):
         super().__init__()
         self.setWindowTitle('New RPOC Editor')
-        self.params = Params()
+        self.params = Params() 
+        self.loaded_img = None  # will store a grayscale numpy array
 
-        self.channel_names = channel_names if channel_names else []
-        self.loaded_img = None
-
+        # full right side
         self.roi_table = QTableWidget(0, 5)
         self.roi_table.setHorizontalHeaderLabels(['ROI Name', 'Coordinates', 'Lower Threshold', 'Upper Threshold', 'Modulation Level'])
-        self.roi_table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.roi_table.customContextMenuRequested.connect(self.show_table_context_menu) 
 
-        # top left
+        # top on left
         load_button = QPushButton('Load Image')
         load_button.clicked.connect(self.load_image)
 
-        self.mask_checkbox = QCheckBox("Mask [M]")
-        self.mask_checkbox.setChecked(True)
-        self.mask_checkbox.stateChanged.connect(lambda state: self.toggle_mask_visibility(state == Qt.Checked))
-
-        self.label_checkbox = QCheckBox("Labels [N]")
-        self.label_checkbox.setChecked(True)
-        self.label_checkbox.stateChanged.connect(lambda state: self.toggle_label_visibility(state == Qt.Checked))
-
-        self.preview_button = QPushButton("Preview [P]")
-        self.preview_button.clicked.connect(self.preview_mask)
-        preview_action = QAction("Preview Mask", self)
-        preview_action.setShortcut("P")
-        preview_action.triggered.connect(self.preview_mask)
-        self.addAction(preview_action)
-
+        # middle left
+        self.help_label = QLabel('Press "M" to toggle mask visibility\n'
+                                 'Press "N" to toggle label visibility\n'
+                                 'Right-click row in table to delete ROI\n'
+                                 'Press "P" to preview the final mask')
         self.threshold_slider = QRangeSlider(Qt.Horizontal)
         self.threshold_slider.setMinimum(0)
         self.threshold_slider.setMaximum(255)
-        self.threshold_slider.setValue((20, 80))
+        self.threshold_slider.setValue((20,80))
         self.threshold_slider.valueChanged.connect(self.on_threshold_changed)
 
         self.save_button = QPushButton("Save Mask")
         self.save_button.clicked.connect(self.save_mask)
 
-        self.cellpose_button = QPushButton("Segment with Cellpose")
-        self.cellpose_button.clicked.connect(self.run_cellpose_segmentation)
-
         middle_controls_layout = QHBoxLayout()
-        middle_controls_layout.addWidget(self.mask_checkbox)
-        middle_controls_layout.addWidget(self.label_checkbox)
-        middle_controls_layout.addWidget(self.preview_button)
+        middle_controls_layout.addWidget(self.help_label)
         middle_controls_layout.addWidget(self.threshold_slider)
         middle_controls_layout.addWidget(self.save_button)
 
-
-        self.toggle_layout = QHBoxLayout()
-        self.channel_checkboxes = []
-        self.image_layers = []
-        self.image_colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), (0, 255, 255), (255, 0, 255)]  # Adjust as needed
-        self.image_visibility = []
-
-        if preloaded_images:
-            for i, pil_image in enumerate(preloaded_images):
-                img = np.array(pil_image.convert("L"))  # grayscale per channel
-                self.image_layers.append(img)
-                self.image_visibility.append(True)
-
-                checkbox = QCheckBox(f"{channel_names[i]} [{i+1}]")
-                checkbox.setChecked(True)
-                checkbox.stateChanged.connect(lambda state, ch=i: self.on_channel_toggle(ch, state))
-                self.channel_checkboxes.append(checkbox)
-                self.toggle_layout.addWidget(checkbox)
-        self.roi_channel_flags = []  
-
+        # bottom left
         self.image_scene = QGraphicsScene()
-        self.image_item = self.image_scene.addPixmap(QPixmap())  
-        self.image_view = ImageViewer(self.image_scene, self.roi_table, self.params, self)
+        self.image_item = self.image_scene.addPixmap(QPixmap())  # Placeholder
+        self.image_view = ImageViewer(self.image_scene, self.roi_table, self.params)   
 
         layout = QHBoxLayout()
         left_layout = QVBoxLayout()
-        left_layout.addLayout(self.toggle_layout)
+        left_layout.addWidget(load_button) 
         left_layout.addLayout(middle_controls_layout)
         left_layout.addWidget(self.image_view)
-        left_layout.addWidget(self.cellpose_button)
 
         layout.addLayout(left_layout)
         layout.addWidget(self.roi_table)
@@ -343,62 +295,35 @@ class MainWindow(QMainWindow):
         container.setLayout(layout)
         self.setCentralWidget(container)
 
-        self.update_displayed_image()
+        self.roi_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.roi_table.customContextMenuRequested.connect(self.show_table_context_menu)
 
-    def keyPressEvent(self, event):
-        key = event.key()
-        if Qt.Key_1 <= key <= Qt.Key_9:
-            idx = key - Qt.Key_1
-            if 0 <= idx < len(self.image_layers):
-                new_state = not self.image_visibility[idx]
-                self.image_visibility[idx] = new_state
-                cb = self.channel_checkboxes[idx]
-                cb.blockSignals(True)
-                cb.setChecked(new_state)
-                cb.blockSignals(False)
-                self.update_displayed_image()
+        preview_action = QAction("Preview Mask", self)
+        preview_action.setShortcut("P")
+        preview_action.triggered.connect(self.preview_mask)
+        self.addAction(preview_action)
 
-        elif key == Qt.Key_M:
-            new_state = not self.mask_checkbox.isChecked()
-            self.mask_checkbox.blockSignals(True)
-            self.mask_checkbox.setChecked(new_state)
-            self.mask_checkbox.blockSignals(False)
-            self.toggle_mask_visibility(new_state)
+        self.cellpose_button = QPushButton("Segment with Cellpose")
+        self.cellpose_button.clicked.connect(self.run_cellpose_segmentation)
+        left_layout.addWidget(self.cellpose_button)
 
-        elif key == Qt.Key_N:
-            new_state = not self.label_checkbox.isChecked()
-            self.label_checkbox.blockSignals(True)
-            self.label_checkbox.setChecked(new_state)
-            self.label_checkbox.blockSignals(False)
-            self.toggle_label_visibility(new_state)
-
-        else:
-            super().keyPressEvent(event)
-
-    def on_channel_toggle(self, idx, state):
-        self.image_visibility[idx] = bool(state)
-        self.update_displayed_image()
-
-
+        if preload_image is not None:
+            self.set_preloaded_image(preload_image)
 
     def run_cellpose_segmentation(self):
-        if not self.image_layers:
+        if self.loaded_img is None:
             return
-
+    
         self.cellpose_button.setText("Segmenting...")
         self.cellpose_button.setEnabled(False)
         QApplication.processEvents()
 
-        visible_imgs = [
-            img for img, visible in zip(self.image_layers, self.image_visibility) if visible
-        ]
-        if not visible_imgs:
-            return
-
-        composite = np.mean(visible_imgs, axis=0).astype(np.uint8)
+        low, high = self.threshold_slider.value()
+        masked = self.loaded_img.copy()
+        masked[(masked < low) | (masked > high)] = 0
 
         model = models.Cellpose(model_type='cyto3')
-        masks, _, _, _ = model.eval([composite], diameter=None, channels=[0, 0])
+        masks, _, _, _ = model.eval([masked], diameter=None, channels=[0, 0])
         masks = masks[0]
 
         n_rois = len(self.image_view.roi_items)
@@ -432,7 +357,6 @@ class MainWindow(QMainWindow):
             self.image_view.roi_label_items.append(label_item)
 
             self.image_view.add_roi_to_table(n_rois + 1, points)
-            self.roi_channel_flags.append(self.image_visibility.copy())
             n_rois += 1
 
         self.cellpose_button.setText("Segment with Cellpose")
@@ -461,29 +385,23 @@ class MainWindow(QMainWindow):
             self.update_displayed_image()
 
     def update_displayed_image(self):
-        if not self.image_layers:
+        if not hasattr(self, 'original_rgb_img') or self.original_rgb_img is None:
             return
 
-        height, width = self.image_layers[0].shape
-        rgb_overlay = np.zeros((height, width, 3), dtype=np.uint8)
         low, high = self.threshold_slider.value()
+        gray = self.loaded_img
+        rgb = self.original_rgb_img.copy()
 
-        for i, (img, visible) in enumerate(zip(self.image_layers, self.image_visibility)):
-            if not visible:
-                continue
-            color = np.array(self.image_colors[i])
-            mask = (img >= low) & (img <= high)
-            normalized = np.zeros_like(img, dtype=np.float32)
-            if np.any(mask):
-                clipped = np.clip(img.astype(np.float32), low, high)
-                normalized[mask] = (clipped[mask] - low) / max((high - low), 1)
-            channel_img = (normalized[..., None] * color).astype(np.uint8)
-            rgb_overlay = np.clip(rgb_overlay + channel_img, 0, 255)
+        mask_out = (gray < low) | (gray > high)
+        rgb[mask_out] = [0, 0, 0]
 
-        qimage = QImage(rgb_overlay.data, width, height, 3 * width, QImage.Format_RGB888)
-        self.image_item.setPixmap(QPixmap.fromImage(qimage))
-        self.image_scene.setSceneRect(QRectF(qimage.rect()))
+        height, width, channels = rgb.shape
+        bytes_per_line = channels * width
+        qimage = QImage(rgb.data, width, height, bytes_per_line, QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(qimage)
 
+        self.image_item.setPixmap(pixmap)
+        self.image_scene.setSceneRect(QRectF(pixmap.rect()))
 
     def show_table_context_menu(self, pos):
         row = self.roi_table.indexAt(pos).row()
@@ -545,59 +463,62 @@ class MainWindow(QMainWindow):
         self.update_displayed_image()   # update visible pixel
         self.params.low, self.params.high = values
 
-    def toggle_mask_visibility(self, visible):
-        self.image_view.show_rois = visible
-        self.image_view.update_roi_visibility()
-
-    def toggle_label_visibility(self, visible):
-        self.image_view.show_labels = visible
-        self.image_view.update_roi_visibility()
-
     def generate_final_mask(self):
-        if not self.image_layers:
-            print("No image data.")
+        if self.loaded_img is None:
             return None
 
-        height, width = self.image_layers[0].shape
+        height, width = self.loaded_img.shape[:2]
         final_mask = np.zeros((height, width), dtype=np.uint8)
+        row_count = self.roi_table.rowCount()
 
-        for row in range(self.roi_table.rowCount()):
+        for row in range(row_count):
             idx_item = self.roi_table.item(row, 0)
-            if not idx_item:
-                continue
+            coords_item = self.roi_table.item(row, 1)
+            low_item = self.roi_table.item(row, 2)
+            high_item = self.roi_table.item(row, 3)
+            mod_item = self.roi_table.item(row, 4)
 
-            roi_index = idx_item.data(Qt.UserRole)
-            if roi_index is None or roi_index - 1 >= len(self.roi_channel_flags):
+            if not (idx_item and coords_item and low_item and high_item and mod_item):
                 continue
 
             try:
-                low_val = float(self.roi_table.item(row, 2).text())
-                high_val = float(self.roi_table.item(row, 3).text())
-                mod_val = float(self.roi_table.item(row, 4).text())
+                low_val = float(low_item.text())
+                high_val = float(high_item.text())
+                mod_val = float(mod_item.text())  # typically between 0.0 and 1.0
             except:
                 continue
 
-            active_channels = self.roi_channel_flags[roi_index - 1]
-            roi_path_item = self.image_view.roi_items[roi_index - 1]
+            roi_index = idx_item.data(Qt.UserRole)
+            if roi_index is None:
+                continue
+
+            matching_item_idx = None
+            for i, lbl in enumerate(self.image_view.roi_label_items):
+                if lbl.toPlainText() == str(roi_index):
+                    matching_item_idx = i
+                    break
+            if matching_item_idx is None:
+                continue
+
+            roi_path_item = self.image_view.roi_items[matching_item_idx]
             polygons = roi_path_item.path().toSubpathPolygons()
             if not polygons:
                 continue
 
             polygon = polygons[0]
-            pts = np.array([[int(p.x()), int(p.y())] for p in polygon], dtype=np.int32).reshape(-1, 1, 2)
+            pts = []
+            for p in polygon:
+                pts.append([int(round(p.x())), int(round(p.y()))])
+            pts = np.array(pts, dtype=np.int32).reshape(-1, 1, 2)
             roi_mask = np.zeros((height, width), dtype=np.uint8)
             cv2.fillPoly(roi_mask, [pts], 255)
 
-            combined_mask = np.zeros((height, width), dtype=bool)
+            inside_y, inside_x = np.where(roi_mask == 255)
+            intensities = self.loaded_img[inside_y, inside_x]
+            valid = (intensities >= low_val) & (intensities <= high_val)
+            valid_idxs = np.where(valid)
 
-            for i, (img, active) in enumerate(zip(self.image_layers, active_channels)):
-                if not active:
-                    continue
-                valid_range = (img >= low_val) & (img <= high_val)
-                combined_mask |= valid_range
-
-            valid_pixels = combined_mask & (roi_mask == 255)
-            final_mask[valid_pixels] = int(mod_val * 255)
+            final_mask[inside_y[valid_idxs], inside_x[valid_idxs]] = int(mod_val * 255)
 
         return final_mask
 
@@ -621,37 +542,35 @@ class MainWindow(QMainWindow):
         dialog.resize(width, height)
         dialog.exec_()
 
-
     def save_mask(self):
-        mask = self.generate_final_mask()
-        if mask is None:
-            return
+        if self.loaded_img is None:
+            return 
 
-        save_path, _ = QFileDialog.getSaveFileName(
-            self, 'Save Mask', '', 'PNG (*.png);;TIFF (*.tif);;All Files (*)'
-        )
+        save_path, _ = QFileDialog.getSaveFileName(self, 'Save Mask', '', 'PNG (*.png);;TIFF (*.tif);;All Files (*)')
         if not save_path:
             return
 
-        cv2.imwrite(save_path, mask)
+        final_mask = self.generate_final_mask()
+        if final_mask is None:
+            return
+
+        cv2.imwrite(save_path, final_mask)
         print("Mask saved to:", save_path)
 
-def launch_pyqt_editor(preloaded_images=None, channel_names=None):
+def launch_pyqt_editor(preloaded_image=None):
     app = QApplication.instance()
+    app_created = False
     if app is None:
         app = QApplication(sys.argv)
-        set_dark_theme(app)
+        app_created = True
 
-    
-
-    win = MainWindow(preloaded_images=preloaded_images, channel_names=channel_names)
-
+    set_dark_theme(app)
+    win = MainWindow(preload_image=preloaded_image)
     win.resize(1200, 800)
     win.show()
 
-    if not QApplication.instance().startingUp():
+    if app_created:
         app.exec_()
-
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

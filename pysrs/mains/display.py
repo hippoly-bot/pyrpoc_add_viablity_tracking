@@ -178,14 +178,13 @@ def display_data(gui, data_list):
                 if idx not in gui.mod_masks:
                     continue
                 mask_img = gui.mod_masks[idx]
-                mask_arr = np.array(mask_img.convert('L')) > 128
+                mask_arr = np.array(mask_img.convert('L')) > 0
 
-                # Resize if needed
                 if mask_arr.shape != (ny, nx):
                     from PIL import Image
                     mask_arr = Image.fromarray(mask_arr.astype(np.uint8) * 255)
                     mask_arr = mask_arr.resize((nx, ny), Image.NEAREST)
-                    mask_arr = np.array(mask_arr) > 128
+                    mask_arr = np.array(mask_arr) > 0
 
                 # Make RGBA overlay
                 color = overlay_colors[idx % len(overlay_colors)]

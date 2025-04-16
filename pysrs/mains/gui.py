@@ -236,7 +236,6 @@ class GUI:
         ttk.Label(self.io_frame, text='Images to acquire').grid(row=0, column=0, sticky='w', padx=(5, 0))
         self.save_num_entry = ttk.Entry(self.io_frame, width=8)
         self.save_num_entry.insert(0, '1')
-        self.apply_feedback_to_entry(self.save_num_entry) # this isn't working for some reason
         self.save_num_entry.grid(row=0, column=1, sticky='w', padx=(5, 5))
 
         self.progress_label = ttk.Label(self.io_frame, text='(0/0)', font=('Calibri', 12, 'bold'))
@@ -248,14 +247,13 @@ class GUI:
 
         self.save_file_entry = ttk.Entry(self.path_frame, width=30)
         self.save_file_entry.insert(0, 'Documents/example.tiff')
-        self.apply_feedback_to_entry(self.save_file_entry)
         self.save_file_entry.grid(row=0, column=0, padx=5, sticky='ew')
 
         browse_button = ttk.Button(self.path_frame, text="📂", width=2, command=self.browse_save_path)
         browse_button.grid(row=0, column=1, padx=5)
 
         ###########################################################
-        #################### 2. PARAM ENTRY ##########################
+        #################### 2. PARAM ENTRY ########################
         ###########################################################
         self.param_pane = CollapsiblePane(self.sidebar, text='Parameters', gui=self)
         self.param_pane.pack(fill="x", padx=10, pady=5)
@@ -268,8 +266,7 @@ class GUI:
             ('Offset X', 'offset_x'), ('Offset Y', 'offset_y'),
             ('AO Chans', 'ao_chans'), ('Steps X', 'numsteps_x'), ('Steps Y', 'numsteps_y'),
             ('Extra Steps Left', 'extrasteps_left'), ('Extra Steps Right', 'extrasteps_right'),
-            ('AI Chans', 'ai_chans'), ('Sampling Rate (Hz)', 'rate'), ('Dwell Time (us)', 'dwell'),
-            ('Input Names', 'channel_names')
+            ('Sampling Rate (Hz)', 'rate'), ('Dwell Time (us)', 'dwell')
         ]
         num_cols = 3
         for index, (label_text, key) in enumerate(param_groups):
@@ -277,46 +274,47 @@ class GUI:
             col = index % num_cols
             ttk.Label(self.param_frame, text=label_text).grid(row=row, column=col, padx=5, pady=(5, 0), sticky='w')
             entry = ttk.Entry(self.param_frame, width=18)
-            if key in ['ao_chans', 'ai_chans', 'channel_names']:
-                entry.insert(0, ",".join(self.config[key]))
-            else:
-                entry.insert(0, str(self.config[key]))
+            entry.insert(0, str(self.config[key]))
             entry.grid(row=row+1, column=col, padx=5, pady=(0, 5), sticky='ew')
             self.param_entries[key] = entry
             self.param_frame.columnconfigure(col, weight=1)
-
             entry.bind("<FocusOut>", lambda e: self.update_config())
             entry.bind("<Return>", lambda e: self.update_config())
 
         self.info_frame = ttk.Frame(self.param_frame)
         self.info_frame.grid(row=0, column=0, columnspan=1, sticky="ew")
         self.info_frame.grid_propagate(False)
-
         info_button_param = ttk.Label(self.info_frame, text='ⓘ', foreground=self.highlight_color,
-                                      cursor='hand2', font=bold_font)
+                                    cursor='hand2', font=bold_font)
         info_button_param.pack(side="left", padx=5, pady=(0, 2))
-
-        galvo_tooltip_text = (
+        Tooltip(info_button_param, (
             "• Device: NI-DAQ device (e.g., 'Dev1')\n"
             "• AO Chans, AI Chans\n"
             "• Amp X/Y + Offset X/Y\n"
             "• Steps X/Y + Extra Steps\n"
             "• Rate, Dwell, Input Names\n"
             "No quotes needed; separate multiple channels by commas."
-        )
-        Tooltip(info_button_param, galvo_tooltip_text)
+        ))
 
+        ttk.Separator(self.param_frame, orient="horizontal").grid(column=0, columnspan=3, sticky="ew", pady=(10, 4))
+        ttk.Label(self.param_frame, text="# of Input Channels:").grid(row=99, column=0, padx=5, pady=(0, 4), sticky="e")
 
+        self.num_inputs_var = tk.IntVar(value=len(self.config["ai_chans"]))
+        self.num_inputs_entry = ttk.Entry(self.param_frame, textvariable=self.num_inputs_var, width=6)
+        self.num_inputs_entry.grid(row=99, column=1, sticky="w", padx=5, pady=(0, 4))
+        self.num_inputs_entry.bind("<FocusOut>", lambda e: self.update_input_channel_settings())
+        self.num_inputs_entry.bind("<Return>", lambda e: self.update_input_channel_settings())
 
-        ###########################################################
-        ######### 3. COLORBARS (create_colorbar_settings()) ##########
-        ###########################################################
-        self.cb_pane = CollapsiblePane(self.sidebar, text="Colorbar Settings", gui=self)
-        self.cb_pane.pack(fill="x", padx=10, pady=5)
+        self.input_channels_frame = ttk.LabelFrame(self.param_frame, text="Input Channel Settings")
+        self.input_channels_frame.grid(row=100, column=0, columnspan=3, sticky="ew", padx=4, pady=(0, 8))
+        for col in range(3):
+            self.input_channels_frame.columnconfigure(col, weight=1)
 
-        self.cb_frame = ttk.Frame(self.cb_pane.container, padding=(12, 12))
-        self.cb_frame.grid(row=0, column=0, sticky="ew")
-        self.create_colorbar_settings()
+        self.ai_chan_vars = []
+        self.ai_name_vars = []
+        self.ai_cbmax_vars = []
+
+        self.update_input_channel_settings()
 
 
         ###########################################################
@@ -350,26 +348,22 @@ class GUI:
         ttk.Label(self.delay_stage_frame, text="Start (µm)").grid(row=2, column=0, sticky="w", padx=5, pady=3)
         self.entry_start_um = ttk.Entry(self.delay_stage_frame, width=10)
         self.entry_start_um.insert(0, str(self.hyper_config['start_um']))
-        self.apply_feedback_to_entry(self.entry_start_um)
         self.entry_start_um.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
 
         ttk.Label(self.delay_stage_frame, text="Stop (µm)").grid(row=3, column=0, sticky="w", padx=5, pady=3)
         self.entry_stop_um = ttk.Entry(self.delay_stage_frame, width=10)
         self.entry_stop_um.insert(0, str(self.hyper_config['stop_um']))
-        self.apply_feedback_to_entry(self.entry_stop_um)
         self.entry_stop_um.grid(row=3, column=1, padx=5, pady=3, sticky="ew")
 
         ttk.Label(self.delay_stage_frame, text="Single Delay (µm)").grid(row=4, column=0, sticky="w", padx=5, pady=3)
         self.entry_single_um = ttk.Entry(self.delay_stage_frame, width=10)
         self.entry_single_um.insert(0, str(self.hyper_config['single_um']))
-        self.apply_feedback_to_entry(self.entry_single_um)
         self.entry_single_um.grid(row=4, column=1, padx=5, pady=3, sticky="ew")
         self.entry_single_um.bind('<Return>', self.single_delay_changed)
         self.entry_single_um.bind('<FocusOut>', self.single_delay_changed)
 
         ttk.Label(self.delay_stage_frame, text="Number of Shifts").grid(row=5, column=0, sticky="w", padx=5, pady=3)
         self.entry_numshifts = ttk.Entry(self.delay_stage_frame, width=10)
-        self.apply_feedback_to_entry(self.entry_numshifts)
         self.entry_numshifts.insert(0, '10')
         self.entry_numshifts.grid(row=5, column=1, padx=5, pady=3, sticky="ew")
 
@@ -402,7 +396,6 @@ class GUI:
         self.prior_port_entry = ttk.Entry(self.prior_stage_frame, width=10)
         self.prior_port_entry.insert(0, "4")
         self.prior_port_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
-        self.apply_feedback_to_entry(self.prior_port_entry)
         self.prior_port_entry.bind("<FocusOut>", self._on_prior_port_changed)
         self.prior_port_entry.bind("<Return>", self._on_prior_port_changed)
 
@@ -424,7 +417,6 @@ class GUI:
         ttk.Label(self.z_manual_frame, text="Set Z Height (µm)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
         self.prior_z_entry = ttk.Entry(self.z_manual_frame, width=10)
         self.prior_z_entry.insert(0, "940")
-        self.apply_feedback_to_entry(self.prior_z_entry)
         self.prior_z_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
         self.prior_move_z_button = ttk.Button(self.z_manual_frame, text="Move Z", command=self.move_prior_stage_z)
         self.prior_move_z_button.grid(row=0, column=2, padx=5, pady=3, sticky="ew")
@@ -432,7 +424,6 @@ class GUI:
         ttk.Label(self.z_manual_frame, text="Set X Y").grid(row=1, column=0, padx=5, pady=3, sticky="w")
         self.prior_pos_entry = ttk.Entry(self.z_manual_frame, width=10)
         self.prior_pos_entry.insert(0, "1000, 1000")
-        self.apply_feedback_to_entry(self.prior_pos_entry)
         self.prior_pos_entry.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
         self.prior_move_pos_button = ttk.Button(self.z_manual_frame, text="Move X Y", command=self.move_prior_stage_xy)
         self.prior_move_pos_button.grid(row=1, column=2, padx=5, pady=3, sticky="ew")
@@ -457,19 +448,16 @@ class GUI:
         ttk.Label(self.z_scan_frame, text="Z Start (µm)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
         self.entry_z_start = ttk.Entry(self.z_scan_frame, width=10)
         self.entry_z_start.insert(0, "900")
-        self.apply_feedback_to_entry(self.entry_z_start)
         self.entry_z_start.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
 
         ttk.Label(self.z_scan_frame, text="Z Stop (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="w")
         self.entry_z_stop = ttk.Entry(self.z_scan_frame, width=10)
         self.entry_z_stop.insert(0, "1000")
-        self.apply_feedback_to_entry(self.entry_z_stop)
         self.entry_z_stop.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
 
         ttk.Label(self.z_scan_frame, text="Number of Steps").grid(row=2, column=0, padx=5, pady=3, sticky="w")
         self.entry_z_steps = ttk.Entry(self.z_scan_frame, width=10)
         self.entry_z_steps.insert(0, "10")
-        self.apply_feedback_to_entry(self.entry_z_steps)
         self.entry_z_steps.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
 
         self.toggle_zscan_fields()
@@ -482,7 +470,7 @@ class GUI:
         ###########################################################
         #################### 6. RPOC ##############################
         ###########################################################
-        self.rpoc_pane = CollapsiblePane(self.sidebar, text='RPOC Masking', gui=self)
+        self.rpoc_pane = CollapsiblePane(self.sidebar, text='RPOC', gui=self)
         self.rpoc_pane.pack(fill="x", padx=10, pady=5)
 
         self.rpoc_frame = ttk.Frame(self.rpoc_pane.container, padding=(8, 8))
@@ -490,50 +478,37 @@ class GUI:
         for col in range(4):
             self.rpoc_frame.columnconfigure(col, weight=0)
 
-        newmask_button = ttk.Button(self.rpoc_frame, text='Create mask from:', command=self.create_mask, width=14)
+        newmask_button = ttk.Button(self.rpoc_frame, text='Create Mask', command=self.create_mask)
         newmask_button.grid(row=0, column=0, sticky="ew", padx=5, pady=2)
 
-        self.rpoc_channel_var = tk.StringVar()
-        self.rpoc_channel_entry = ttk.Entry(self.rpoc_frame, textvariable=self.rpoc_channel_var, width=10)
-        self.rpoc_channel_entry.grid(row=0, column=1, sticky="w", padx=5, pady=2)
-        self.apply_feedback_to_entry(self.rpoc_channel_entry)
-        self.rpoc_channel_entry.bind("<Return>", self.finalize_selection)
-        self.rpoc_channel_entry.bind("<FocusOut>", self.finalize_selection)
-
-        ttk.Separator(self.rpoc_frame, orient="horizontal").grid(row=1, column=0, columnspan=4, sticky="ew", pady=6)
-
-        # Show mask checkbox (moved up)
         self.show_mask_var = tk.BooleanVar(value=False)
         show_mask_check = ttk.Checkbutton(
             self.rpoc_frame, text='Show RPOC Mask',
             variable=self.show_mask_var, command=self.toggle_rpoc_fields
         )
-        show_mask_check.grid(row=2, column=0, padx=5, pady=2, sticky="w")
+        show_mask_check.grid(row=0, column=1, padx=5, pady=2, sticky="w")
 
         ttk.Label(self.rpoc_frame, text="# of Modulation Channels:").grid(
-            row=3, column=0, sticky="e", padx=5, pady=2
+            row=1, column=0, sticky="e", padx=5, pady=2
         )
         self.num_mod_channels_var = tk.IntVar(value=1)
         self.num_mod_channels_entry = ttk.Entry(self.rpoc_frame, textvariable=self.num_mod_channels_var, width=5)
-        self.num_mod_channels_entry.grid(row=3, column=1, sticky="w", padx=5, pady=2)
+        self.num_mod_channels_entry.grid(row=1, column=1, sticky="w", padx=5, pady=2)
         self.num_mod_channels_entry.bind("<FocusOut>", lambda e: self.update_modulation_channels())
         self.num_mod_channels_entry.bind("<Return>", lambda e: self.update_modulation_channels())
 
         self.mod_channels_frame = ttk.LabelFrame(self.rpoc_frame, text="Modulation Channel Settings")
-        self.mod_channels_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(4, 8))
+        self.mod_channels_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(4, 8))
         for col in range(4):
             self.mod_channels_frame.columnconfigure(col, weight=0)
 
-        # Variable dwell time
         self.var_dwell_var = tk.BooleanVar(value=False)
         var_dwell_check = ttk.Checkbutton(
             self.rpoc_frame,
             text="Enable Variable Dwell Time",
             variable=self.var_dwell_var
         )
-        var_dwell_check.grid(row=5, column=0, columnspan=4, sticky="w", pady=(0, 10))
-
-        # Removed lower horizontal divider
+        var_dwell_check.grid(row=3, column=0, columnspan=4, sticky="w", pady=(0, 10))
 
         self.update_modulation_channels()
 
@@ -588,7 +563,6 @@ class GUI:
                 self.zaber_stage.disconnect()
             self.zaber_stage.port = new_port
             self.zaber_stage.connect()
-            self.show_feedback(self.zaber_port_entry)
         except Exception as e:
             messagebox.showerror("Zaber Port Error", f"Could not connect to {new_port}, reverting... make sure that you are on the ASCII protocol, and that you typed COM before the port number.")
             self.config['zaber_chan'] = old_port
@@ -602,7 +576,6 @@ class GUI:
             if val < 0 or val > 50000:
                 raise ValueError
             self.hyper_config['single_um'] = val
-            self.show_feedback(self.entry_single_um)
         except ValueError:
             messagebox.showerror("Value Error", "Invalid single delay. Reverting.")
             self.entry_single_um.delete(0, tk.END)
@@ -625,7 +598,6 @@ class GUI:
             test = int(val)
             if test < 0 or test > 9999:
                 raise ValueError
-            self.show_feedback(self.prior_port_entry)
         except ValueError:
             messagebox.showerror("Value Error", f"Invalid Prior port {val}. Reverting.")
             self.prior_port_entry.delete(0, tk.END)
@@ -714,13 +686,6 @@ class GUI:
 
         launch_pyqt_editor(preloaded_images=images, channel_names=self.config["channel_names"])
 
-    def update_rpoc_options(self):
-        if self.config["channel_names"]:
-            if self.rpoc_channel_var.get() not in self.config["channel_names"]:
-                self.rpoc_channel_var.set(self.config["channel_names"][0])
-        else:
-            self.rpoc_channel_var.set("No channels available")
-
     def update_modulation_channels(self):
         for child in self.mod_channels_frame.winfo_children():
             child.destroy()
@@ -777,7 +742,7 @@ class GUI:
     def finalize_selection(self, event):
         current_text = self.rpoc_channel_var.get().strip()
         if current_text in self.config["channel_names"]:
-            self.show_feedback(self.rpoc_channel_entry)
+            pass
         else:
             messagebox.showerror("Invalid Selection", f"'{current_text}' is not a valid channel.")
 
@@ -803,59 +768,133 @@ class GUI:
     ###########################################################
     #################### PARAMETER HANDLING ###################
     ###########################################################
+    def update_input_channel_settings(self):
+        for child in self.input_channels_frame.winfo_children():
+            child.destroy()
+
+        try:
+            n = int(self.num_inputs_var.get())
+        except ValueError:
+            return
+
+        self.input_ai_vars = []
+        self.input_name_vars = []
+        self.input_auto_cb_vars = []
+        self.input_fixed_cb_vars = []
+
+        self.auto_colorbar_vars = {}
+        self.fixed_colorbar_vars = {}
+        self.fixed_colorbar_widgets = {}
+
+        ttk.Label(self.input_channels_frame, text="AI Channel").grid(row=0, column=0, padx=5, pady=2)
+        ttk.Label(self.input_channels_frame, text="Display Name").grid(row=0, column=1, padx=5, pady=2)
+        ttk.Label(self.input_channels_frame, text="Auto Colorbar").grid(row=0, column=2, padx=5, pady=2)
+        ttk.Label(self.input_channels_frame, text="Fixed Max").grid(row=0, column=3, padx=5, pady=2)
+
+        for i in range(n):
+            ai_var = tk.StringVar(value=f"ai{i}")
+            name_var = tk.StringVar(value=f"ch{i}")
+            auto_var = tk.BooleanVar(value=True)
+            fixed_var = tk.StringVar(value="")
+
+            self.input_ai_vars.append(ai_var)
+            self.input_name_vars.append(name_var)
+            self.input_auto_cb_vars.append(auto_var)
+            self.input_fixed_cb_vars.append(fixed_var)
+
+            label = name_var.get()
+            self.auto_colorbar_vars[label] = auto_var
+            self.fixed_colorbar_vars[label] = fixed_var
+
+            ttk.Entry(self.input_channels_frame, textvariable=ai_var, width=10).grid(row=i+1, column=0, padx=5, pady=2)
+            ttk.Entry(self.input_channels_frame, textvariable=name_var, width=12).grid(row=i+1, column=1, padx=5, pady=2)
+
+            auto_cb = ttk.Checkbutton(self.input_channels_frame, variable=auto_var)
+            auto_cb.grid(row=i+1, column=2, padx=5, pady=2)
+
+            entry = ttk.Entry(self.input_channels_frame, textvariable=fixed_var, width=8)
+            entry.grid(row=i+1, column=3, padx=5, pady=2)
+
+            self.fixed_colorbar_widgets[label] = entry
+
+            def make_toggle_callback(v=auto_var, e=entry):
+                return lambda *_: e.configure(state='disabled' if v.get() else 'normal')
+
+            auto_var.trace_add("write", make_toggle_callback(auto_var, entry))
+            entry.configure(state='disabled' if auto_var.get() else 'normal')
+
+            entry.bind("<Return>", lambda e, cl=label: self.on_fixed_entry_update(cl))
+            entry.bind("<FocusOut>", lambda e, cl=label: self.on_fixed_entry_update(cl))
+
+        self.input_channels_frame.update_idletasks()
+
+
+
     def update_config(self):
         for key, entry in self.param_entries.items():
             old_val = self.config[key]
             value = entry.get().strip()
             try:
-                if key in ['ao_chans', 'ai_chans', 'channel_names']:
-                    channels = [v.strip() for v in value.split(',') if v.strip()]
-                    if channels != self.config[key]:
-                        self.config[key] = channels
-                        self.show_feedback(entry)
-                        self.update_rpoc_options()
-                        self.create_colorbar_settings()
+                if key in ['ao_chans']:  
+                    chans = [v.strip() for v in value.split(',') if v.strip()]
+                    if chans != self.config[key]:
+                        self.config[key] = chans
+
                 elif key == 'device':
                     if value != self.config[key]:
                         self.config[key] = value
-                        self.show_feedback(entry)
+
                 elif key in ['amp_x', 'amp_y', 'offset_x', 'offset_y', 'rate', 'dwell']:
                     float_val = float(value)
                     if float_val != self.config[key]:
                         self.config[key] = float_val
-                        self.show_feedback(entry)
+
                 elif key in ['numsteps_x', 'numsteps_y', 'extrasteps_left', 'extrasteps_right']:
                     int_val = int(value)
                     if int_val != self.config[key]:
                         self.config[key] = int_val
-                        self.show_feedback(entry)
+
                 else:
                     if int(value) != self.config[key]:
                         self.config[key] = int(value)
-                        self.show_feedback(entry)
+
             except ValueError:
                 messagebox.showerror('Error', f'Invalid value for {key}. Reverting.')
                 entry.delete(0, tk.END)
                 entry.insert(0, str(old_val))
                 return
 
-        self.update_rpoc_options()
+        try:
+            self.config["ai_chans"] = [var.get().strip() for var in self.input_ai_vars]
+            self.config["channel_names"] = [var.get().strip() for var in self.input_name_vars]
+
+            for label, var in zip(self.config["channel_names"], self.input_fixed_cb_vars):
+                self.fixed_colorbar_vars[label] = var
+                if not hasattr(self, "auto_colorbar_vars") or label not in self.auto_colorbar_vars:
+                    self.auto_colorbar_vars[label] = tk.BooleanVar(value=True)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to apply input channel settings:\n{e}")
+            return
+        
+        if hasattr(self, "input_name_vars") and hasattr(self, "input_auto_cb_vars"):
+            self.auto_colorbar_vars.clear()
+            self.fixed_colorbar_vars.clear()
+            self.fixed_colorbar_widgets.clear()
+            for name_var, auto_var, fixed_var in zip(
+                self.input_name_vars, self.input_auto_cb_vars, self.input_fixed_cb_vars
+            ):
+                label = name_var.get().strip()
+                self.auto_colorbar_vars[label] = auto_var
+                self.fixed_colorbar_vars[label] = fixed_var
+
+                for w in self.input_channels_frame.winfo_children():
+                    if isinstance(w, ttk.Entry) and w.cget("textvariable") == str(fixed_var):
+                        self.fixed_colorbar_widgets[label] = w
+
         self.toggle_hyperspectral_fields()
         self.toggle_save_options()
         self.toggle_rpoc_fields()
-
-    def apply_feedback_to_entry(self, entry_widget):
-        # helper to save myself retyping this same stuff every time i make an entry box
-        # for some reason it doesnt work on the colorbars, but that's ok because they obviously update the display
-        entry_widget.bind("<FocusOut>", lambda event: self.show_feedback(entry_widget))
-        entry_widget.bind("<Return>", lambda event: self.show_feedback(entry_widget))
-
-    def show_feedback(self, widget):
-        # highlight parameters light green to indicate acceptance of the entry
-        local_style = ttk.Style()
-        local_style.configure("Feedback.TEntry", fieldbackground="lightgreen")
-        widget.configure(style="Feedback.TEntry")
-        self.root.after(500, lambda: widget.configure(style="TEntry"))
 
 
 
@@ -923,82 +962,12 @@ class GUI:
         if hasattr(self, 'data') and self.data:
             display.display_data(self, self.data)
 
-
-
-
-    ###########################################################
-    #################### DYNAMIC COLORBARS ####################
-    ###########################################################
-    def create_colorbar_settings(self):
-        existing_widgets = dict(self.fixed_colorbar_widgets)
-        ai_list = self.config['ai_chans']
-        names_list = self.config['channel_names']
-        n_ch = max(len(ai_list), len(names_list))
-
-        for oldkey in list(existing_widgets.keys()):
-            if oldkey not in names_list:
-                parent_frame = self.fixed_colorbar_widgets[oldkey].master
-                parent_frame.destroy()
-                del self.auto_colorbar_vars[oldkey]
-                del self.fixed_colorbar_vars[oldkey]
-                del self.fixed_colorbar_widgets[oldkey]
-
-        for i in range(n_ch):
-            label = (names_list[i] if i < len(names_list) else
-                     ai_list[i] if i < len(ai_list) else f"chan{i}")
-
-            if label in self.fixed_colorbar_widgets:
-                continue
-
-            row_frame = ttk.Frame(self.cb_frame)
-            row_frame.pack(fill='x', pady=2)
-
-            lbl = ttk.Label(row_frame, text=label, width=10)
-            lbl.pack(side='left')
-
-            auto_var = tk.BooleanVar(value=True)
-            self.auto_colorbar_vars[label] = auto_var
-
-            def command_wrapper(chan_label=label):
-                self.update_colorbar_entry_state(chan_label)
-                if self.data is not None:
-                    display.display_data(self, self.data)
-
-            auto_cb = ttk.Checkbutton(
-                row_frame,
-                text='Auto Scale',
-                variable=auto_var,
-                command=command_wrapper
-            )
-            auto_cb.pack(side='left', padx=5)
-
-            fixed_var = tk.StringVar(value="")
-            self.fixed_colorbar_vars[label] = fixed_var
-            fixed_entry = ttk.Entry(row_frame, textvariable=fixed_var, width=8)
-            fixed_entry.pack(side="left", padx=5)
-            self.fixed_colorbar_widgets[label] = fixed_entry
-
-            self.apply_feedback_to_entry(fixed_entry)
-            fixed_entry.configure(state='disabled')
-            fixed_entry.bind("<Return>", lambda e, cl=label: self.on_fixed_entry_update(cl))
-            fixed_entry.bind("<FocusOut>", lambda e, cl=label: self.on_fixed_entry_update(cl))
-
-        self.cb_frame.update_idletasks()
-
     def on_fixed_entry_update(self, channel_label):
         if self.auto_colorbar_vars.get(channel_label, tk.BooleanVar()).get():
             return  
         if self.data is not None:
             display.display_data(self, self.data)
 
-    def update_colorbar_entry_state(self, display_name):
-        widget = self.fixed_colorbar_widgets.get(display_name)
-        if not widget:
-            return
-        if self.auto_colorbar_vars[display_name].get():
-            widget.configure(state='disabled')
-        else:
-            widget.configure(state='normal')
 
     def close(self):
         self.running = False
