@@ -1,0 +1,32 @@
+[project]
+name = "pyrpoc"
+version = "0.1.1"
+description = "Real-time Precision Opto-Control Toolkit"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { file = "LICENSE" }
+
+authors = [
+  { name = "Ishaan Singh", email = "sing1125@purdue.com" }
+]
+
+dependencies = [
+  "numpy",
+  "scipy",scs
+  "opencv-python",
+  "pillow",
+  "matplotlib",
+  "pyqt5",       
+  "superqt",     
+  "cellpose",      
+  "nidaqmx",   
+  "pyvisa",      
+  # Add any others your app depends on
+]
+
+[project.scripts]
+pyrpoc = "pyrpoc.main:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
