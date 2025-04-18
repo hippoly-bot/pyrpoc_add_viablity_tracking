@@ -21,7 +21,6 @@ dependencies = [
   "cellpose",      
   "nidaqmx",   
   "pyvisa",      
-  # Add any others your app depends on
 ]
 
 [project.scripts]
