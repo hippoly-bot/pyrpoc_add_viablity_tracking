@@ -21,6 +21,7 @@ dependencies = [
   "cellpose",      
   "nidaqmx",   
   "pyvisa",      
+  "zaber_motion"
 ]
 
 [project.scripts]
