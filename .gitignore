@@ -3,6 +3,7 @@ __pycache__/
 *.so
 
 venv/
+rpoc_dev/
 .env/
 .venv/
 

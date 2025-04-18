@@ -11,14 +11,12 @@ authors = [
 ]
 
 dependencies = [
-  "numpy",
-  "scipy",
+  "cellpose", 
   "opencv-python",
   "pillow",
   "matplotlib",
   "pyqt5",       
-  "superqt",     
-  "cellpose",      
+  "superqt",    
   "nidaqmx",   
   "pyvisa",      
   "zaber_motion"
