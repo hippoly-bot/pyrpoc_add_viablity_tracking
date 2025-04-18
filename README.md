@@ -14,8 +14,8 @@ pip install pyrpoc
 
 Then, run the command below to open the GUI. 
 
-'''
+```
 pyrpoc
-'''
+```
 
 If the command does not work, it is likely an issue with the PATH variable - make sure that Python scripts are available to PATH.
