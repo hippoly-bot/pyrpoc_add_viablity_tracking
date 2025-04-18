@@ -6,7 +6,7 @@ With any feedback or suggestions, please reach out to sing1125@purdue.edu.
 
 ## Basic Installation
 
-The software is available as a package, simply install it in the normal way. It is recommended, but not required, to use a virtual environment.
+The software is available as a package - make sure python 3.12 is in use, with a virtual environment if necessary. Once the virtual environment with python<=3.12 is created, run the following command. 
 
 ``` 
 pip install pyrpoc
