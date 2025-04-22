@@ -42,7 +42,7 @@ class GUI:
             'ao_chans': ['ao1', 'ao0'],
             'ai_chans': ['ai0', 'ai1'],
             'channel_names': ['505', '642'],
-            'zaber_chan': 'COM3',
+            'zaber_chan': '3',
             'amp_x': 0.75,
             'amp_y': 0.75,
             'offset_x': 0.5,
@@ -65,7 +65,6 @@ class GUI:
         self.mask_file_path = tk.StringVar(value="No mask loaded")
         self.zaber_stage = ZaberStage(port=self.config['zaber_chan'])
         self.rpoc_mode_var = tk.StringVar(value='standard')
-        self.dwell_mult_var = tk.DoubleVar(value=2.0)
 
         self.channel_axes = []
         self.slice_x = []
@@ -345,15 +344,38 @@ class GUI:
         )
         self.delay_hyperspec_checkbutton.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky='w')
 
-        ttk.Label(self.delay_stage_frame, text="Start (µm)").grid(row=2, column=0, sticky="w", padx=5, pady=3)
-        self.entry_start_um = ttk.Entry(self.delay_stage_frame, width=10)
-        self.entry_start_um.insert(0, str(self.hyper_config['start_um']))
-        self.entry_start_um.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
+        self.delay_hyperspec_checkbutton = ttk.Checkbutton(
+            self.delay_stage_frame,
+            text='Enable Hyperspectral Scanning',
+            variable=self.hyperspectral_enabled,
+            command=self.toggle_hyperspectral_fields
+        )
+        self.delay_hyperspec_checkbutton.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky='w')
 
-        ttk.Label(self.delay_stage_frame, text="Stop (µm)").grid(row=3, column=0, sticky="w", padx=5, pady=3)
-        self.entry_stop_um = ttk.Entry(self.delay_stage_frame, width=10)
+        # Hyperspectral Scan Settings Group
+        self.hyperspec_frame = ttk.LabelFrame(self.delay_stage_frame, text="Hyperspectral Scan Settings", padding=(12, 12))
+        self.hyperspec_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=5)
+        for col in range(3):
+            self.hyperspec_frame.columnconfigure(col, weight=1)
+
+        ttk.Label(self.hyperspec_frame, text="Start (µm)").grid(row=0, column=0, sticky="w", padx=5, pady=3)
+        self.entry_start_um = ttk.Entry(self.hyperspec_frame, width=10)
+        self.entry_start_um.insert(0, str(self.hyper_config['start_um']))
+        self.entry_start_um.grid(row=0, column=2, padx=5, pady=3, sticky="ew")
+
+        ttk.Label(self.hyperspec_frame, text="Stop (µm)").grid(row=1, column=0, sticky="w", padx=5, pady=3)
+        self.entry_stop_um = ttk.Entry(self.hyperspec_frame, width=10)
         self.entry_stop_um.insert(0, str(self.hyper_config['stop_um']))
-        self.entry_stop_um.grid(row=3, column=1, padx=5, pady=3, sticky="ew")
+        self.entry_stop_um.grid(row=1, column=2, padx=5, pady=3, sticky="ew")
+
+        ttk.Label(self.hyperspec_frame, text="Number of Shifts").grid(row=3, column=0, sticky="w", padx=5, pady=3)
+        self.entry_numshifts = ttk.Entry(self.hyperspec_frame, width=10)
+        self.entry_numshifts.insert(0, '10')
+        self.entry_numshifts.grid(row=3, column=2, padx=5, pady=3, sticky="ew")
+
+        self.calibrate_button = ttk.Button(self.hyperspec_frame, text='Calibrate',
+                                        command=lambda: calibration.calibrate_stage(self))
+        self.calibrate_button.grid(row=4, column=0, columnspan=2, padx=5, pady=10, sticky='ew')
 
         ttk.Label(self.delay_stage_frame, text="Single Delay (µm)").grid(row=4, column=0, sticky="w", padx=5, pady=3)
         self.entry_single_um = ttk.Entry(self.delay_stage_frame, width=10)
@@ -362,22 +384,8 @@ class GUI:
         self.entry_single_um.bind('<Return>', self.single_delay_changed)
         self.entry_single_um.bind('<FocusOut>', self.single_delay_changed)
 
-        ttk.Label(self.delay_stage_frame, text="Number of Shifts").grid(row=5, column=0, sticky="w", padx=5, pady=3)
-        self.entry_numshifts = ttk.Entry(self.delay_stage_frame, width=10)
-        self.entry_numshifts.insert(0, '10')
-        self.entry_numshifts.grid(row=5, column=1, padx=5, pady=3, sticky="ew")
-
-        self.calibrate_button = ttk.Button(
-            self.delay_stage_frame, text='Calibrate',
-            command=lambda: calibration.calibrate_stage(self)
-        )
-        self.calibrate_button.grid(row=6, column=0, padx=5, pady=10, sticky='ew')
-
-        self.movestage_button = ttk.Button(
-            self.delay_stage_frame, text='Move Stage',
-            command=self.force_zaber
-        )
-        self.movestage_button.grid(row=6, column=1, padx=5, pady=10, sticky='ew')
+        self.movestage_button = ttk.Button(self.delay_stage_frame, text='Move Stage', command=self.force_zaber)
+        self.movestage_button.grid(row=4, column=2, padx=5, pady=5, sticky="ew")
 
 
 
@@ -409,8 +417,32 @@ class GUI:
         self.zscan_enable_check.grid(row=1, column=0, columnspan=3, sticky="w", padx=5, pady=5)
 
 
+        
+
+        self.z_scan_frame = ttk.LabelFrame(self.prior_stage_frame, text="Z-Scan Settings", padding=(12, 12))
+        self.z_scan_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=5)
+        for col in range(3):
+            self.z_scan_frame.columnconfigure(col, weight=1)
+
+        ttk.Label(self.z_scan_frame, text="Z Start (µm)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
+        self.entry_z_start = ttk.Entry(self.z_scan_frame, width=10)
+        self.entry_z_start.insert(0, "900")
+        self.entry_z_start.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
+
+        ttk.Label(self.z_scan_frame, text="Z Stop (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="w")
+        self.entry_z_stop = ttk.Entry(self.z_scan_frame, width=10)
+        self.entry_z_stop.insert(0, "1000")
+        self.entry_z_stop.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
+
+        ttk.Label(self.z_scan_frame, text="Number of Steps").grid(row=2, column=0, padx=5, pady=3, sticky="w")
+        self.entry_z_steps = ttk.Entry(self.z_scan_frame, width=10)
+        self.entry_z_steps.insert(0, "10")
+        self.entry_z_steps.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
+
+
+
         self.z_manual_frame = ttk.LabelFrame(self.prior_stage_frame, text="Z Stage Manual Controls", padding=(12, 12))
-        self.z_manual_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=5)
+        self.z_manual_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=5)
         for col in range(3):
             self.z_manual_frame.columnconfigure(col, weight=1)
 
@@ -439,26 +471,6 @@ class GUI:
         self.prior_focus_button = ttk.Button(self.z_manual_frame, text="Auto-Focus",
                                              command=lambda: threading.Thread(target=self.run_autofocus, daemon=True).start())
         self.prior_focus_button.grid(row=2, column=2, rowspan=2, padx=5, pady=5, sticky="ew")
-
-        self.z_scan_frame = ttk.LabelFrame(self.prior_stage_frame, text="Z-Scan Settings", padding=(12, 12))
-        self.z_scan_frame.grid(row=3, column=0, columnspan=3, sticky="ew", pady=5)
-        for col in range(3):
-            self.z_scan_frame.columnconfigure(col, weight=1)
-
-        ttk.Label(self.z_scan_frame, text="Z Start (µm)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
-        self.entry_z_start = ttk.Entry(self.z_scan_frame, width=10)
-        self.entry_z_start.insert(0, "900")
-        self.entry_z_start.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
-
-        ttk.Label(self.z_scan_frame, text="Z Stop (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="w")
-        self.entry_z_stop = ttk.Entry(self.z_scan_frame, width=10)
-        self.entry_z_stop.insert(0, "1000")
-        self.entry_z_stop.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
-
-        ttk.Label(self.z_scan_frame, text="Number of Steps").grid(row=2, column=0, padx=5, pady=3, sticky="w")
-        self.entry_z_steps = ttk.Entry(self.z_scan_frame, width=10)
-        self.entry_z_steps.insert(0, "10")
-        self.entry_z_steps.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
 
         self.toggle_zscan_fields()
 
@@ -501,14 +513,6 @@ class GUI:
         self.mod_channels_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(4, 8))
         for col in range(4):
             self.mod_channels_frame.columnconfigure(col, weight=0)
-
-        self.var_dwell_var = tk.BooleanVar(value=False)
-        var_dwell_check = ttk.Checkbutton(
-            self.rpoc_frame,
-            text="Enable Variable Dwell Time",
-            variable=self.var_dwell_var
-        )
-        var_dwell_check.grid(row=3, column=0, columnspan=4, sticky="w", pady=(0, 10))
 
         self.update_modulation_channels()
 

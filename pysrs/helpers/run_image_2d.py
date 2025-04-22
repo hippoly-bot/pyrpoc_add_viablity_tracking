@@ -8,27 +8,14 @@ from PIL import Image, ImageTk, ImageDraw, ImageOps
 import warnings
 warnings.filterwarnings("ignore", category=DaqWarning, message=".*200011.*")
 
-def run_scan(ai_channels, galvo, mode="standard", mask=None, dwell_multiplier=2.0,
-             modulate=False, mod_do_chans=None, mod_masks=None):
+def run_scan(ai_channels, galvo, modulate=False, mod_do_chans=None, mod_masks=None):
     if isinstance(ai_channels, str):
         ai_channels = [ai_channels]
 
     has_mods = modulate and mod_do_chans and mod_masks and (len(mod_do_chans) == len(mod_masks))
-
-    if mode == 'variable':
-        gen_mask = mod_masks[0] if has_mods else mask
-        if gen_mask is None:
-            raise ValueError("Variable dwell mode requires a valid mask.")
-        if isinstance(gen_mask, Image.Image):
-            gen_mask = np.array(gen_mask)
-        gen_mask = gen_mask > 0.49
-
-        x_wave, y_wave, pixel_map = galvo.gen_variable_waveform(gen_mask, dwell_multiplier)
-        composite_wave = np.vstack([x_wave, y_wave])
-        total_samps = len(x_wave)
-    else:
-        composite_wave = galvo.waveform.copy()
-        total_samps = galvo.total_samples
+    
+    composite_wave = galvo.waveform.copy()
+    total_samps = galvo.total_samples
 
     with nidaqmx.Task() as ao_task, nidaqmx.Task() as ai_task, nidaqmx.Task() as do_task:
         for chan in galvo.ao_chans:
@@ -102,11 +89,8 @@ def run_scan(ai_channels, galvo, mode="standard", mask=None, dwell_multiplier=2.
     results = []
     for i in range(len(ai_channels)):
         channel_data = acq_data if len(ai_channels) == 1 else acq_data[i]
-        if mode == 'variable':
-            pixel_values = interpret_DAQ_output(channel_data, gen_mask, pixel_map, galvo)
-        else:
-            reshaped = channel_data.reshape(galvo.total_y, galvo.total_x, galvo.pixel_samples)
-            pixel_values = np.mean(reshaped, axis=2)
+        reshaped = channel_data.reshape(galvo.total_y, galvo.total_x, galvo.pixel_samples)
+        pixel_values = np.mean(reshaped, axis=2)
         cropped = pixel_values[:, galvo.extrasteps_left:galvo.extrasteps_left + galvo.numsteps_x]
         results.append(cropped)
 

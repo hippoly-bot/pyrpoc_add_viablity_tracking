@@ -3,8 +3,8 @@ from zaber_motion import Units
 from zaber_motion.ascii import Connection
 
 class ZaberStage:
-    def __init__(self, port='COM3'):
-        self.port = port
+    def __init__(self, port='3'):
+        self.port = 'COM' + str(port)
         self.connection = None
         self.device = None
         self.axis = None

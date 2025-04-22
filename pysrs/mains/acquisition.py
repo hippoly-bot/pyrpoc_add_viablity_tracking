@@ -127,8 +127,6 @@ def acquire_single(gui, channels, galvo, move_z=None):
         if gui.simulation_mode.get():
             data_list = generate_data(len(channels), config=gui.config)
         else:
-            mode = 'variable' if gui.var_dwell_var.get() else 'standard'
-
             mod_do_chans = []
             mod_masks = []
 
@@ -143,8 +141,6 @@ def acquire_single(gui, channels, galvo, move_z=None):
             data_list = run_scan(
                 ai_channels=channels,
                 galvo=galvo,
-                mode=mode,
-                dwell_multiplier=gui.dwell_mult_var.get(),
                 modulate=bool(mod_do_chans),  # only True if any channels enabled
                 mod_do_chans=mod_do_chans,
                 mod_masks=mod_masks,

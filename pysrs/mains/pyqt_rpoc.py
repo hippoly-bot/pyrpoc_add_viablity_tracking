@@ -2,7 +2,6 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw 
 import cv2 
-from cellpose import models
 import random
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QPushButton, QFileDialog,
@@ -382,6 +381,8 @@ class MainWindow(QMainWindow):
 
 
     def run_cellpose_segmentation(self):
+        from cellpose import models
+        
         if not self.image_layers:
             return
 
