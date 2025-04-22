@@ -3,9 +3,9 @@ from tkinter import ttk, messagebox
 import time, threading
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from pysrs.helpers.galvo_funcs import Galvo
-from pysrs.helpers.run_image_2d import run_scan  
-from pysrs.helpers.utils import generate_data
+from pyrpoc.helpers.galvo_funcs import Galvo
+from pyrpoc.helpers.run_image_2d import run_scan  
+from pyrpoc.helpers.utils import generate_data
 
 # TODO: make the calibration plot dark mode because pretty
 def calibrate_stage(gui):

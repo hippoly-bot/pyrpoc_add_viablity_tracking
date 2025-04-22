@@ -1,10 +1,10 @@
 import os
 from tkinter import messagebox
-from pysrs.helpers.utils import generate_data, convert
-from pysrs.mains.display import display_data
-from pysrs.helpers.galvo_funcs import Galvo
-from pysrs.helpers.run_image_2d import run_scan
-import pysrs.helpers.prior_stage.functions as prior
+from pyrpoc.helpers.utils import generate_data, convert
+from pyrpoc.mains.display import display_data
+from pyrpoc.helpers.galvo_funcs import Galvo
+from pyrpoc.helpers.run_image_2d import run_scan
+import pyrpoc.helpers.prior_stage.functions as prior
 
 def reset_gui(gui):
     gui.running = False

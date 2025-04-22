@@ -1,19 +1,21 @@
-# pysrs
-A python package for coordinating DAQ for stimulated Raman spectroscopy. Project start date: 1/15/24
+# pyrpoc
 
 Author: Ishaan Singh, Zhang Group (https://sites.google.com/view/zhangresearchgroup)
+This software was written for the Zhang group's RPOC and SRS microscopy system, see https://www.nature.com/articles/s41467-022-32071-z. The purpose of it is to consolidate all the various LabVIEW scripts that are currently in use into a single all-in-one GUI with an intuitive interface. Functionalities include full flexibility of galvo mirror scanning, multi-channel imaging, multi-channel RPOC mask design and application, hyperspectral/z-stack imaging via a Zaber delay/Prior stage, and more. 
+With any feedback or suggestions, please reach out to sing1125@purdue.edu.
 
 ## Basic Installation
 
-Navigate to the directory that contains ```setup.py```. Run 
+The software is available as a package - make sure python 3.12 is in use, with a virtual environment if necessary (I am unsure exactly why 3.13 doesn't work, but a virtual environment is a clean way to resolve the issue). Once the virtual environment with python<=3.12.4 is created, run the following command. 
 
 ``` 
-pip install -e .
+pip install pyrpoc
 ```
 
-## Current Features
-- All-in-one GUI for performing Raman imaging with the instruments in-lab, modularized for flexibility when instruments change or for other labs to adopt
-- Coordinated instruments: analog outputs/inputs (galvo mirrors and lock-in amplifier respectively), Zaber movable delay stage, Prior ProScan3 movable stage
-- Support for the real-time precision opto-control technique previously developed by the Zhang group
+Then, run the command below to open the GUI. 
 
-Please reach out to sing1125@purdue.edu with any suggestions or feedback on the GUI. 
+```
+pyrpoc
+```
+
+If the command does not work, it is likely an issue with the PATH variable - make sure that Python scripts are available to PATH.

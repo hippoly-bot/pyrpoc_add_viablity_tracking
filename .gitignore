@@ -1,3 +1,14 @@
-*.pyc
-*.egg-info
-*.vi
+__pycache__/
+*.py[cod]
+*.so
+
+venv/
+rpoc_dev/
+.env/
+.venv/
+
+*.egg-info/
+dist/
+build/
+
+.vscode/

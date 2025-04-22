@@ -6,16 +6,15 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import threading, os
 from pathlib import Path
 from PIL import Image
-from pysrs.helpers.zaber import ZaberStage
-from pysrs.old_utils.rpoc2 import RPOC
-from pysrs.helpers.widgets import CollapsiblePane, ScrollableFrame
-from pysrs.helpers.utils import Tooltip
-from pysrs.mains import acquisition
-from pysrs.helpers import calibration
-from pysrs.mains import display
-from pysrs.mains.display import create_gray_red_cmap
-from pysrs.helpers.prior_stage import functions as prior
-from pysrs.mains.pyqt_rpoc import launch_pyqt_editor
+from pyrpoc.helpers.zaber import ZaberStage
+from pyrpoc.helpers.widgets import CollapsiblePane, ScrollableFrame
+from pyrpoc.helpers.utils import Tooltip
+from pyrpoc.mains import acquisition
+from pyrpoc.helpers import calibration
+from pyrpoc.mains import display
+from pyrpoc.mains.display import create_gray_red_cmap
+from pyrpoc.helpers.prior_stage import functions as prior
+from pyrpoc.mains.pyqt_rpoc import launch_pyqt_editor
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FOLDERICON_PATH = BASE_DIR / "data" / "folder_icon.png"
