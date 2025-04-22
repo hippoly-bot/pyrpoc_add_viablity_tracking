@@ -6,10 +6,24 @@ With any feedback or suggestions, please reach out to sing1125@purdue.edu.
 
 ## Basic Installation
 
-The software is available as a package - make sure python 3.12 is in use, with a virtual environment if necessary (I am unsure exactly why 3.13 doesn't work, but a virtual environment is a clean way to resolve the issue). Once the virtual environment with python<=3.12.4 is created, run the following command. 
+The software is available as a package - make sure python 3.12 is in use, with a virtual environment if necessary (I am unsure exactly why 3.13 doesn't work, but a virtual environment is a clean way to resolve the issue). To do this with venv, first ensure that python 3.12 is installed on the system by running:
 
 ``` 
+py -0
+```
+
+If a version of python 3.12 is installed, then run the following commands.
+
+```
+py -3.12 -m venv your_env_name
+your_env_name/scripts/activate
 pip install pyrpoc
+```
+
+For development mode, ensure the code is downloaded and that you have navigated to the folder containing pyproject.toml, then run
+
+```
+pip install -e .
 ```
 
 Then, run the command below to open the GUI. 
