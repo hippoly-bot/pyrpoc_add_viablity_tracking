@@ -145,6 +145,57 @@ def auto_focus(gui, port: int, channel_name: str, step_size=10):
     return best_z, best_focus
 
 
+def estimate_fov(gui, port: int, channel_name: str, initial_step_um: int = 10, max_attempts: int = 15):
+    connect_prior(port)
+    gui.simulation_mode.set(False)
+    gui.acquiring = True
+
+    try:
+        channel_index = gui.config["channel_names"].index(channel_name)
+    except ValueError:
+        raise RuntimeError(f"Invalid channel name: '{channel_name}'")
+
+    try:
+        x0, y0 = get_xy(port)
+    except Exception as e:
+        gui.acquiring = False
+        raise RuntimeError(f"Could not read stage position: {e}")
+
+    acquisition.acquire(gui, auxilary=True)
+    ref_img = gui.data[channel_index]
+    ref_crop = ref_img[int(ref_img.shape[0]*0.25):int(ref_img.shape[0]*0.75),
+                      int(ref_img.shape[1]*0.25):int(ref_img.shape[1]*0.75)]
+
+    shift_x = initial_step_um
+    best_match = 0
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            move_xy(port, x0 + shift_x, y0)
+            time.sleep(0.2)
+            acquisition.acquire(gui, auxilary=True)
+            new_img = gui.data[channel_index]
+            new_crop = new_img[int(new_img.shape[0]*0.25):int(new_img.shape[0]*0.75),
+                               int(new_img.shape[1]*0.25):int(new_img.shape[1]*0.75)]
+
+            # cross correlation based similarity index
+            match = cv2.matchTemplate(ref_crop, new_crop, cv2.TM_CCOEFF_NORMED)[0][0]
+            print(f"Step {shift_x} µm → NCC Match: {match:.4f}")
+
+            if match < 0.1:
+                break
+            shift_x += initial_step_um
+        except Exception as e:
+            print(f"[Estimate FOV] Step {shift_x} failed: {e}")
+            break
+
+    gui.acquiring = False
+    return shift_x
+
+
+
+
+
 def move_z(port: int, z_height: int):
     connect_prior(port)
 
@@ -160,17 +211,40 @@ def move_z(port: int, z_height: int):
 def move_xy(port: int, x: int, y: int):
     connect_prior(port)
 
-    if not (0 <= x <= 50000) or not (0 <= y <= 50000):
-        raise ValueError("X and Y positions must be between 0 and 50,000 µm.")
+    x0, y0 = get_xy(port)
+    if not (x0-10000 <= x <= x0+10000) or not (y0-10000 <= y <= y0+10000):
+        raise ValueError("Entered position is more than 1 cm away, and may be unsafe. Cancelling...")
 
     ret, _ = send_command(f"controller.stage.goto-position {x} {y}")
     if ret != 0:
         raise RuntimeError(f"Could not move Prior stage to {x}, {y}.")
 
+def get_xy(port: int):
+    # returns x, y as integers
+    # e.g., x0, y0 = get_xy(4)
+    connect_prior(port)
+    ret, response = send_command("controller.stage.position.get")
+    if ret != 0:
+        raise RuntimeError("Failed to get Y position.")
+    try:
+        return map(int, response.split(","))
+    except ValueError:
+        raise RuntimeError(f"Invalid Y position response: '{response}'")
+
+def get_z(port: int):
+    connect_prior(port)
+    ret, response = send_command("controller.z.position.get")
+    if ret != 0:
+        raise RuntimeError("Failed to get Z position.")
+    try:
+        return int(response)
+    except ValueError:
+        raise RuntimeError(f"Invalid Z position response: '{response}'")
 
 if __name__ == "__main__":
     print("connecting")
     connect_prior(4)
 
-    move_xy(4, 1000, 1000)
-    move_z(4, 2500)
+    print("Current Position:")
+    x0, y0 = get_xy(4)
+    print(x0, y0)

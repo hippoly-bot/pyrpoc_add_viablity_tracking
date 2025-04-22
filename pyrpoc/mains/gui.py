@@ -6,6 +6,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import threading, os
 from pathlib import Path
 from PIL import Image
+import sys
 
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QPalette, QColor
@@ -15,7 +16,7 @@ from pyrpoc.helpers.zaber import ZaberStage
 from pyrpoc.helpers.widgets import CollapsiblePane, ScrollableFrame
 from pyrpoc.helpers.utils import Tooltip
 from pyrpoc.mains import acquisition
-from pyrpoc.helpers import calibration
+from pyrpoc.helpers.spectrum_analyzer import SpectrumAnalyzer
 from pyrpoc.mains import display
 from pyrpoc.mains.display import create_gray_red_cmap
 from pyrpoc.helpers.prior_stage import functions as prior
@@ -71,7 +72,7 @@ class GUI:
             'amp_y': 0.75,
             'offset_x': 0.5,
             'offset_y': 0.4,
-            'rate': 1e6,
+            'rate': 5e5,
             'numsteps_x': 512,
             'numsteps_y': 512,
             'extrasteps_left': 200,
@@ -130,7 +131,7 @@ class GUI:
         self.update_sidebar_visibility()
         self.root.after(500, self.update_sidebar_visibility)
 
-        self.welcome()
+        # self.welcome()
 
         threading.Thread(
             target=acquisition.acquire,
@@ -297,7 +298,7 @@ class GUI:
             col = index % num_cols
             ttk.Label(self.param_frame, text=label_text).grid(row=row, column=col, padx=5, pady=(5, 0), sticky='w')
             entry = ttk.Entry(self.param_frame, width=18)
-            entry.insert(0, str(self.config[key]))
+            entry.insert(0, ', '.join(self.config[key]) if isinstance(self.config[key], list) else str(self.config[key]))
             entry.grid(row=row+1, column=col, padx=5, pady=(0, 5), sticky='ew')
             self.param_entries[key] = entry
             self.param_frame.columnconfigure(col, weight=1)
@@ -376,7 +377,7 @@ class GUI:
         )
         self.delay_hyperspec_checkbutton.grid(row=1, column=0, columnspan=3, padx=5, pady=5, sticky='w')
 
-        # Hyperspectral Scan Settings Group
+        # hyperspectral boxed group
         self.hyperspec_frame = ttk.LabelFrame(self.delay_stage_frame, text="Hyperspectral Scan Settings", padding=(12, 12))
         self.hyperspec_frame.grid(row=2, column=0, columnspan=3, sticky="ew", pady=5)
         for col in range(3):
@@ -396,10 +397,10 @@ class GUI:
         self.entry_numshifts = ttk.Entry(self.hyperspec_frame, width=10)
         self.entry_numshifts.insert(0, '10')
         self.entry_numshifts.grid(row=3, column=2, padx=5, pady=3, sticky="ew")
-
-        self.calibrate_button = ttk.Button(self.hyperspec_frame, text='Calibrate',
-                                        command=lambda: calibration.calibrate_stage(self))
-        self.calibrate_button.grid(row=4, column=0, columnspan=2, padx=5, pady=10, sticky='ew')
+        
+        self.analyzer_button = ttk.Button(self.hyperspec_frame, text="Open Spectrum Analyzer",
+            command=lambda: self.launch_spectrum_gui())
+        self.analyzer_button.grid(row=4, column=0, columnspan=3, padx=5, pady=10, sticky="ew")
 
         ttk.Label(self.delay_stage_frame, text="Single Delay (µm)").grid(row=4, column=0, sticky="w", padx=5, pady=3)
         self.entry_single_um = ttk.Entry(self.delay_stage_frame, width=10)
@@ -495,19 +496,19 @@ class GUI:
         self.prior_focus_button = ttk.Button(self.z_manual_frame, text="Auto-Focus",
                                              command=lambda: threading.Thread(target=self.run_autofocus, daemon=True).start())
         self.prior_focus_button.grid(row=2, column=2, rowspan=2, padx=5, pady=5, sticky="ew")
-
-        self.mosaic_button = ttk.Button(
+        
+        self.fov_button = ttk.Button(
             self.prior_stage_frame,
-            text="Open Mosaic Tool",
-            command=self.open_mosaic_gui
+            text="Estimate FOV",
+            command=lambda: threading.Thread(target=self.run_fov_estimation, daemon=True).start()
         )
-        self.mosaic_button.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        self.fov_button.grid(row=4, column=0, sticky="ew", padx=5, pady=5)
+
+        self.mosaic_button = ttk.Button(self.prior_stage_frame, text="Open Mosaic Tool",
+            command=lambda: self.launch_mosaic_gui())
+        self.mosaic_button.grid(row=4, column=1, columnspan=2, sticky="ew", padx=5, pady=5)
 
         self.toggle_zscan_fields()
-
-
-
-
 
 
         ###########################################################
@@ -581,12 +582,25 @@ class GUI:
     ###########################################################
     ##################### GUI BACKEND #########################
     ###########################################################
-    def open_mosaic_gui(self):
-        if not QApplication.instance():
-            app = QApplication([])  # create it if it doesn't exist
-        set_dark_theme(app)
-        dialog = MosaicDialog(self)
-        dialog.exec_()
+    def launch_mosaic_gui(self):
+        def run():
+            app = QApplication.instance() or QApplication(sys.argv)
+            set_dark_theme(app)
+            dialog = MosaicDialog(self)
+            dialog.show()
+            app.exec_()
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def launch_spectrum_gui(self):
+        def run():
+            app = QApplication.instance() or QApplication([])
+            set_dark_theme(app)
+            win = SpectrumAnalyzer(self)
+            win.show()
+            app.exec_()
+
+        threading.Thread(target=run, daemon=True).start()
 
     def on_global_click(self, event):
         # helper for clicking out of widgets, makes the GUI more tactile i feel
@@ -711,6 +725,15 @@ class GUI:
 
         except Exception as e:
             messagebox.showerror("Auto-Focus Error", str(e))
+
+    def run_fov_estimation(self):
+        port = int(self.prior_port_entry.get().strip())
+        channel_name = self.af_channel_var.get().strip()
+        try:
+            result = prior.estimate_fov(self, port, channel_name)
+            self.status_bar.set(f"Estimated FOV width: {result} µm")
+        except Exception as e:
+            self.status_bar.set(f"FOV estimation failed: {e}")
 
     ###########################################################
     ##################### RPOC STUFF ##########################
