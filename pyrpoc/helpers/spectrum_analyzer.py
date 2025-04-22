@@ -5,7 +5,7 @@ import json
 import os
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QSpinBox, QGroupBox, QGridLayout, QCheckBox, QInputDialog, QComboBox, QFileDialog
+    QSpinBox, QGroupBox, QGridLayout, QCheckBox, QInputDialog, QComboBox, QFileDialog, QCheckBox
 )
 from PyQt5.QtCore import Qt, QTimer
 import pyqtgraph as pg
@@ -56,7 +56,6 @@ class SpectrumAnalyzer(QDialog):
         self.layout.addWidget(self.settings_group)
 
         self.plot_widget = pg.PlotWidget(background='k')
-        self.plot = self.plot_widget.plot(pen=pg.mkPen(color='c', width=2), symbol='o', symbolBrush='w', symbolPen=None)
         self.plot_widget.setLabel('bottom', 'Wavenumber (cm⁻¹)')
         self.plot_widget.setLabel('left', 'Average Intensity')
         self.plot_widget.getAxis('bottom').setPen(pg.mkPen('w'))
@@ -65,6 +64,9 @@ class SpectrumAnalyzer(QDialog):
         self.plot_widget.getAxis('left').setTextPen('w')
         self.plot_widget.scene().sigMouseClicked.connect(self.handle_mouse_click)
         self.layout.addWidget(self.plot_widget)
+
+        self.channel_checkboxes = []
+        self.plots = []
 
         self.button_layout = QHBoxLayout()
         self.start_button = QPushButton("Start Acquisition")
@@ -86,6 +88,9 @@ class SpectrumAnalyzer(QDialog):
         self.button_layout.addWidget(self.save_csv_button)
         self.button_layout.addWidget(self.save_cal_button)
         self.layout.addLayout(self.button_layout)
+
+        self.checkbox_layout = QHBoxLayout()
+        self.layout.addLayout(self.checkbox_layout)
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.next_step)
@@ -113,7 +118,25 @@ class SpectrumAnalyzer(QDialog):
         )
         self.wavenumbers = np.array([self.delay_to_wavenumber(p) for p in self.positions])
         self.current_step = 0
-        self.spectrum_values = []
+        self.spectrum_values = [[] for _ in self.gui.config['channel_names']]
+
+        self.plot_widget.clear()
+        self.checkbox_layout.setParent(None)
+        self.checkbox_layout = QHBoxLayout()
+        self.layout.addLayout(self.checkbox_layout)
+        self.plots = []
+        self.channel_checkboxes = []
+
+        colors = ['c', 'y', 'm', 'g', 'r', 'b', 'w']
+        for i, name in enumerate(self.gui.config['channel_names']):
+            plot = self.plot_widget.plot(pen=pg.mkPen(color=colors[i % len(colors)], width=2), name=name, symbol='o')
+            self.plots.append(plot)
+            cb = QCheckBox(name)
+            cb.setChecked(True)
+            cb.stateChanged.connect(self.update_symbol_colors)
+            self.checkbox_layout.addWidget(cb)
+            self.channel_checkboxes.append(cb)
+
         self.running = True
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
@@ -126,24 +149,26 @@ class SpectrumAnalyzer(QDialog):
         self.stop_button.setEnabled(False)
 
     def update_symbol_colors(self):
-        symbol_brushes = []
-        for k in range(len(self.spectrum_values)):
-            if self.calibrating:
-                match = any(np.isclose(self.positions[k], p[0], atol=1e-3) for p in self.calibration_points)
-                color = (0, 255, 0) if match else (255, 0, 0)
-            else:
-                color = (180, 180, 180)
-            symbol_brushes.append(pg.mkBrush(color))
-
         x_data = self.wavenumbers if self.use_wavenumber else self.positions
-
-        self.plot.setData(
-            x_data[:len(self.spectrum_values)],
-            self.spectrum_values,
-            symbol='o',
-            symbolBrush=symbol_brushes,
-            symbolSize=8
-        )
+        for ch, plot in enumerate(self.plots):
+            if not self.channel_checkboxes[ch].isChecked():
+                plot.clear()
+                continue
+            symbol_brushes = []
+            for k in range(len(self.spectrum_values[ch])):
+                if self.calibrating:
+                    match = any(np.isclose(self.positions[k], p[0], atol=1e-3) for p in self.calibration_points)
+                    color = (0, 255, 0) if match else (255, 0, 0)
+                else:
+                    color = (180, 180, 180)
+                symbol_brushes.append(pg.mkBrush(color))
+            plot.setData(
+                x_data[:len(self.spectrum_values[ch])],
+                self.spectrum_values[ch],
+                symbol='o',
+                symbolBrush=symbol_brushes,
+                symbolSize=8
+            )
 
     def next_step(self):
         if not self.running or self.current_step >= len(self.positions):
@@ -157,18 +182,18 @@ class SpectrumAnalyzer(QDialog):
                 self.gui.zaber_stage.move_absolute_um(pos)
                 self.gui.root.update_idletasks()
                 acquisition.acquire(self.gui, auxilary=True)
-                data = self.gui.data[0]
+                data_list = self.gui.data
             else:
                 wn = self.wavenumbers[self.current_step]
-                intensity = 1000 * np.exp(-((wn - 2900) ** 2) / (2 * 40 ** 2)) + np.random.normal(0, 30)
-                data = np.full((128, 128), intensity)
+                data_list = [np.full((128, 128), 1000 * np.exp(-((wn - 2900) ** 2) / (2 * 40 ** 2)) + np.random.normal(0, 30))
+                             for _ in self.gui.config['channel_names']]
         except Exception as e:
             print("Acquisition error:", e)
             self.stop_acquisition()
             return
 
-        avg_intensity = data.mean()
-        self.spectrum_values.append(avg_intensity)
+        for ch, data in enumerate(data_list):
+            self.spectrum_values[ch].append(data.mean())
 
         self.update_symbol_colors()
         self.current_step += 1
@@ -181,8 +206,8 @@ class SpectrumAnalyzer(QDialog):
         if vb.mapSceneToView(pos):
             mouse_x = vb.mapSceneToView(pos).x()
             x_data = self.wavenumbers if self.use_wavenumber else self.positions
-            index = int(np.argmin(np.abs(np.array(x_data[:len(self.spectrum_values)]) - mouse_x)))
-            if 0 <= index < len(self.spectrum_values):
+            index = int(np.argmin(np.abs(np.array(x_data[:len(self.spectrum_values[0])]) - mouse_x)))
+            if 0 <= index < len(self.spectrum_values[0]):
                 guess = x_data[index]
                 new_wn, ok = QInputDialog.getDouble(self, "Assign Wavenumber", f"Assign true wavenumber for peak near {int(guess)}:", guess, 0, 10000, 2)
                 if ok:
@@ -213,16 +238,18 @@ class SpectrumAnalyzer(QDialog):
         self.update_symbol_colors()
 
     def save_csv(self):
-        if not self.spectrum_values:
+        if not any(self.spectrum_values):
             return
         path, _ = QFileDialog.getSaveFileName(self, "Save Spectrum CSV", "spectrum.csv", "CSV Files (*.csv)")
         if path:
             x_vals = self.wavenumbers if self.use_wavenumber else self.positions
             with open(path, 'w', newline='') as f:
                 writer = csv.writer(f)
-                writer.writerow(["X", "Intensity"])
-                for x, y in zip(x_vals, self.spectrum_values):
-                    writer.writerow([x, y])
+                header = ["X"] + self.gui.config['channel_names']
+                writer.writerow(header)
+                for i in range(len(x_vals)):
+                    row = [x_vals[i]] + [self.spectrum_values[ch][i] for ch in range(len(self.spectrum_values))]
+                    writer.writerow(row)
             print(f"Spectrum saved to {path}")
 
     def save_default_calibration(self):
