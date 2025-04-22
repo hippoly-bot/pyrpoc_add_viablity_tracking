@@ -6,6 +6,11 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 import threading, os
 from pathlib import Path
 from PIL import Image
+
+from PyQt5.QtWidgets import QApplication
+from PyQt5.QtGui import QPalette, QColor
+from PyQt5.QtCore import Qt
+
 from pyrpoc.helpers.zaber import ZaberStage
 from pyrpoc.helpers.widgets import CollapsiblePane, ScrollableFrame
 from pyrpoc.helpers.utils import Tooltip
@@ -15,6 +20,26 @@ from pyrpoc.mains import display
 from pyrpoc.mains.display import create_gray_red_cmap
 from pyrpoc.helpers.prior_stage import functions as prior
 from pyrpoc.mains.pyqt_rpoc import launch_pyqt_editor
+from pyrpoc.mains.mosaic import MosaicDialog
+
+def set_dark_theme(app):
+    app.setStyle("Fusion")
+    dark_palette = app.palette()
+
+    dark_palette.setColor(QPalette.Window, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.WindowText, Qt.white)
+    dark_palette.setColor(QPalette.Base, QColor(35, 35, 35))
+    dark_palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ToolTipBase, Qt.white)
+    dark_palette.setColor(QPalette.ToolTipText, Qt.white)
+    dark_palette.setColor(QPalette.Text, Qt.white)
+    dark_palette.setColor(QPalette.Button, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ButtonText, Qt.white)
+    dark_palette.setColor(QPalette.BrightText, Qt.red)
+    dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+    dark_palette.setColor(QPalette.HighlightedText, Qt.black)
+
+    app.setPalette(dark_palette)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FOLDERICON_PATH = BASE_DIR / "data" / "folder_icon.png"
@@ -471,6 +496,13 @@ class GUI:
                                              command=lambda: threading.Thread(target=self.run_autofocus, daemon=True).start())
         self.prior_focus_button.grid(row=2, column=2, rowspan=2, padx=5, pady=5, sticky="ew")
 
+        self.mosaic_button = ttk.Button(
+            self.prior_stage_frame,
+            text="Open Mosaic Tool",
+            command=self.open_mosaic_gui
+        )
+        self.mosaic_button.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+
         self.toggle_zscan_fields()
 
 
@@ -549,6 +581,13 @@ class GUI:
     ###########################################################
     ##################### GUI BACKEND #########################
     ###########################################################
+    def open_mosaic_gui(self):
+        if not QApplication.instance():
+            app = QApplication([])  # create it if it doesn't exist
+        set_dark_theme(app)
+        dialog = MosaicDialog(self)
+        dialog.exec_()
+
     def on_global_click(self, event):
         # helper for clicking out of widgets, makes the GUI more tactile i feel
         if not isinstance(event.widget, tk.Entry):
