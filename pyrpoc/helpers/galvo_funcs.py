@@ -16,7 +16,7 @@ class Galvo:
             "dwell": 10e-6,
             "amp_x": 0.5,
             "amp_y": 0.5,
-            "rate": 10000,
+            "rate": 100000,
             "device": 'Dev1',
             "ao_chans": ['ao1', 'ao0']
         }
@@ -61,18 +61,6 @@ class Galvo:
         y_waveform = np.repeat(y_steps, total_rowsamples)
 
         composite = np.vstack([x_waveform, y_waveform])
-
-        if self.rpoc_mask is not None and self.rpoc_do_chan is not None:
-            rpoc_wave = build_rpoc_wave(
-                self.rpoc_mask,
-                self.pixel_samples,
-                self.total_x,
-                self.total_y,
-                high_voltage=5.0
-            )
-            if rpoc_wave.size != y_waveform.size:
-                raise ValueError("RPOC wave length does not match total scan length!")
-            composite = np.vstack([composite, rpoc_wave])
 
         if x_waveform.size < self.total_samples:
             x_waveform = np.pad(
