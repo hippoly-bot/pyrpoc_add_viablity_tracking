@@ -16,6 +16,7 @@ dependencies = [
   "pillow",
   "matplotlib",
   "pyqt5",       
+  "pyqtgraph",
   "superqt",    
   "nidaqmx",   
   "pyvisa",      
