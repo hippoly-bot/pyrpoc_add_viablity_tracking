@@ -7,6 +7,7 @@ import threading, os
 from pathlib import Path
 from PIL import Image
 import sys
+import importlib.util
 
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QPalette, QColor
@@ -312,12 +313,12 @@ class GUI:
                                     cursor='hand2', font=bold_font)
         info_button_param.pack(side="left", padx=5, pady=(0, 2))
         Tooltip(info_button_param, (
-            "• Device: NI-DAQ device (e.g., 'Dev1')\n"
-            "• AO Chans, AI Chans\n"
-            "• Amp X/Y + Offset X/Y\n"
-            "• Steps X/Y + Extra Steps\n"
-            "• Rate, Dwell, Input Names\n"
-            "No quotes needed; separate multiple channels by commas."
+            "• Device (below): NI-DAQ device (e.g., 'Dev1' without the quotes). \n"
+            "• AO Chans: channels for the galvos, fast direction goes first (e.g., 'ao1, ao2' without the quotes). \n"
+            "• Amp X/Y and Offset X/Y: positional information for galvos in V (e.g., 0.8). \n"
+            "• Steps X/Y + Extra Steps: number of divisions from left to right (e.g., 512). Note that extra steps are included within the amplitude bounds. \n"
+            "• Rate: sample rate for both inputs and outputs (e.g., 1e5). \n"
+            "• Dwell time: time to spend on each pixel in s (e.g., 1e-6). Note that the fast direction continuously scans, the dwell time is not discretely applied in scanning."
         ))
 
         ttk.Separator(self.param_frame, orient="horizontal").grid(column=0, columnspan=3, sticky="ew", pady=(10, 4))
@@ -546,6 +547,19 @@ class GUI:
         for col in range(4):
             self.mod_channels_frame.columnconfigure(col, weight=0)
 
+        # Info icon with tooltip
+        info_label = ttk.Label(self.rpoc_frame, text='ⓘ', foreground=self.highlight_color,
+                       font=('Calibri', 12, 'bold'), cursor='hand2')
+        info_label.grid(row=2, column=5, sticky='w', padx=5)
+
+        Tooltip(info_label, (
+        "To use on-the-fly generated masks from a script: \n" 
+        "Load a .py file as your mask with a function\n\n"
+        "    def generate_mask(image: np.ndarray) -> np.ndarray:\n"
+        "        return (image > threshold).astype(np.uint8)\n\n"
+        "The output must be binary and match the input shape. \n"
+        ))
+
         self.update_modulation_channels()
 
 
@@ -766,7 +780,7 @@ class GUI:
         self.mod_enabled_vars = []
 
         ttk.Label(self.mod_channels_frame, text="DO Channel").grid(row=0, column=0, padx=5)
-        ttk.Label(self.mod_channels_frame, text="Mask File").grid(row=0, column=1, padx=5)
+        ttk.Label(self.mod_channels_frame, text="Mask (.py for auto-process)").grid(row=0, column=1, columnspan=2, padx=5)
         ttk.Label(self.mod_channels_frame, text="Enable").grid(row=0, column=3, padx=5)
 
         for i in range(num):
@@ -792,6 +806,11 @@ class GUI:
             enabled_var = tk.BooleanVar(value=False)
             enabled_check = ttk.Checkbutton(self.mod_channels_frame, variable=enabled_var)
             enabled_check.grid(row=i+1, column=3, padx=5, pady=2)
+            enabled_check.configure(state='disabled') 
+
+            if not hasattr(self, 'mod_enable_checkboxes'):
+                self.mod_enable_checkboxes = {}
+            self.mod_enable_checkboxes[i] = enabled_check
             self.mod_enabled_vars.append(enabled_var)
 
             def make_callback(idx=i):
@@ -815,19 +834,47 @@ class GUI:
     def load_mod_mask(self, idx):
         file_path = filedialog.askopenfilename(
             title="Select Mask File for Mod Channel",
-            filetypes=[("Mask Files", "*.mask *.json *.txt *.png"), ("All Files", "*.*")]
+            filetypes=[("Mask Files", "*.mask *.json *.txt *.png *.py"), ("All Files", "*.*")]
         )
-        if file_path:
-            filename = os.path.basename(file_path)
-            self.mod_mask_vars[idx].set(filename)
-            if not hasattr(self, 'mod_masks'):
-                self.mod_masks = {}
-            try:
-                self.mod_masks[idx] = Image.open(file_path).convert('L')
-            except Exception as e:
-                messagebox.showerror("Mask Error", f"Error loading mask: {e}")
-        else: 
-            self.mod_mask_vars[idx].set("No mask loaded")
+        if not file_path:
+            return  # User cancelled
+
+        filename = os.path.basename(file_path)
+        is_script = file_path.endswith(".py")
+
+        try:
+            if is_script:
+                func = self.load_mask_script(file_path)
+                if not hasattr(self, 'mod_scripts'):
+                    self.mod_scripts = {}
+                self.mod_scripts[idx] = func
+                if hasattr(self, 'mod_masks') and idx in self.mod_masks:
+                    del self.mod_masks[idx]
+            else:
+                mask = Image.open(file_path).convert('L')
+                if not hasattr(self, 'mod_masks'):
+                    self.mod_masks = {}
+                self.mod_masks[idx] = mask
+                if hasattr(self, 'mod_scripts') and idx in self.mod_scripts:
+                    del self.mod_scripts[idx]
+        except Exception as e:
+            messagebox.showerror("Load Error", f"Failed to load mask or script:\n{e}")
+            return  # no UI update for failed loading
+
+        self.mod_mask_vars[idx].set(filename)
+        entry_widget = self.mod_mask_entries[idx]
+        entry_widget.configure(foreground="green", font=('Calibri', 11, 'bold'))
+
+        self.mod_enable_checkboxes[idx].configure(state='normal')
+        self.mod_enabled_vars[idx].set(True)
+
+    def load_mask_script(self, path):
+        spec = importlib.util.spec_from_file_location("user_mask", path)
+        user_mask = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(user_mask)
+        if not hasattr(user_mask, 'generate_mask'):
+            raise ImportError("No function `generate_mask(image_data)` found.")
+        return user_mask.generate_mask
 
 
     ###########################################################

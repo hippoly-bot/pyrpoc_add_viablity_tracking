@@ -13,18 +13,35 @@ class Tooltip:
     def show_tooltip(self, event=None):
         if self.tip_window:
             return
+
+        padding = 25
         x, y, _, _ = self.widget.bbox('insert')
-        x += self.widget.winfo_rootx() + 25
-        y += self.widget.winfo_rooty() + 25
+        x += self.widget.winfo_rootx() + padding
+        y += self.widget.winfo_rooty() + padding
+
         self.tip_window = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(True)
-        tw.geometry(f'+{x}+{y}')
+
         label = tk.Label(
             tw, text=self.text, justify='left',
             background='#ffffe0', relief='solid', borderwidth=1, padx=10, pady=5,
             font=('Calibri', 14)
         )
         label.pack()
+
+        tw.update_idletasks()
+        width = tw.winfo_reqwidth()
+        height = tw.winfo_reqheight()
+
+        screen_width = tw.winfo_screenwidth()
+        screen_height = tw.winfo_screenheight()
+
+        if x + width > screen_width:
+            x = screen_width - width - 10
+        if y + height > screen_height:
+            y = screen_height - height - 10
+    
+        tw.geometry(f'+{x}+{y}')
 
     def hide_tooltip(self, event=None):
         if self.tip_window:

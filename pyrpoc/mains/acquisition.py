@@ -5,6 +5,8 @@ from pyrpoc.mains.display import display_data
 from pyrpoc.helpers.galvo_funcs import Galvo
 from pyrpoc.helpers.run_image_2d import run_scan
 import pyrpoc.helpers.prior_stage.functions as prior
+from PIL import Image
+import numpy as np
 
 def reset_gui(gui):
     gui.running = False
@@ -124,30 +126,65 @@ def acquire_single(gui, channels, galvo, move_z=None):
             return None
 
     try:
-        if gui.simulation_mode.get():
+        if gui.simulation_mode.get(): # :)
             data_list = generate_data(len(channels), config=gui.config)
-        else:
-            mod_do_chans = []
-            mod_masks = []
+            gui.root.after(0, display_data, gui, data_list)
+            return [convert(d) for d in data_list]
+    
+        use_dynamic_mask = hasattr(gui, 'mod_scripts') and any(
+            gui.mod_enabled_vars[i].get() and i in gui.mod_scripts
+            for i in range(len(gui.mod_enabled_vars))
+        )
+        mod_do_chans = []
+        mod_masks = []
 
+        if use_dynamic_mask:
+            data_list = run_scan(
+                ai_channels=channels,
+                galvo=galvo,
+                modulate=False,
+            )
+            converted = [convert(d) for d in data_list]
+
+            # process the first acquisition
+            for i, enabled_var in enumerate(gui.mod_enabled_vars): 
+                if enabled_var.get() and i in gui.mod_scripts:
+                    try:
+                        mask_array = gui.mod_scripts[i](converted[i])
+                        if mask_array.shape != converted[i].shape:
+                            raise ValueError("Mask shape mismatch")
+                        gui.mod_masks[i] = Image.fromarray(mask_array.astype(np.uint8) * 255)
+                    except Exception as e:
+                        print(f"[ERROR] Mask script failed for channel {i}: {e}")
+                        gui.mod_masks.pop(i, None)
+
+            # load the processing as the preset masks for the second (real) acquisition
+            for i, enabled_var in enumerate(gui.mod_enabled_vars): 
+                if enabled_var.get() and i in gui.mod_masks:
+                    ttl_var = gui.mod_ttl_channel_vars[i].get()
+                    mod_do_chans.append(ttl_var)
+                    mod_masks.append(gui.mod_masks[i])
+
+        else:
             if hasattr(gui, 'mod_enabled_vars') and hasattr(gui, 'mod_masks'):
                 for i, enabled_var in enumerate(gui.mod_enabled_vars):
                     if enabled_var.get() and i in gui.mod_masks:
                         ttl_var = gui.mod_ttl_channel_vars[i].get()
-                        mask = gui.mod_masks[i]
                         mod_do_chans.append(ttl_var)
-                        mod_masks.append(mask)
+                        mod_masks.append(gui.mod_masks[i])
 
-            data_list = run_scan(
-                ai_channels=channels,
-                galvo=galvo,
-                modulate=bool(mod_do_chans),  # only True if any channels enabled
-                mod_do_chans=mod_do_chans,
-                mod_masks=mod_masks,
-            )
+        data_list = run_scan(
+            ai_channels=channels,
+            galvo=galvo,
+            modulate=bool(mod_do_chans),
+            mod_do_chans=mod_do_chans,
+            mod_masks=mod_masks,
+        )
 
         gui.root.after(0, display_data, gui, data_list)
         return [convert(d) for d in data_list]
+
+       
 
     except Exception as e:
         reset_gui(gui)
