@@ -144,19 +144,20 @@ def acquire_single(gui, channels, galvo, move_z=None):
                 galvo=galvo,
                 modulate=False,
             )
-            converted = [convert(d) for d in data_list]
+            converted = np.asarray([convert(d) for d in data_list])
 
             # process the first acquisition
             for i, enabled_var in enumerate(gui.mod_enabled_vars): 
                 if enabled_var.get() and i in gui.mod_scripts:
                     try:
-                        mask_array = gui.mod_scripts[i](converted[i])
-                        if mask_array.shape != converted[i].shape:
-                            raise ValueError("Mask shape mismatch")
+                        mask_array = gui.mod_scripts[i](converted)
+                        if mask_array.shape != converted[0].shape:
+                            raise ValueError(f"Returned mask is the wrong size relative to input imgae shape. Input shape: {converted[0].shape}, mask shape: {mask_array.shape}")
                         gui.mod_masks[i] = Image.fromarray(mask_array.astype(np.uint8) * 255)
                     except Exception as e:
-                        print(f"[ERROR] Mask script failed for channel {i}: {e}")
-                        gui.mod_masks.pop(i, None)
+                        print(f"[ERROR] Mask script failed for channel {gui.mod_ttl_channel_vars[i].get()}: {e}")
+                        messagebox.showerror('Auto-Mask Error', f'Error in mask creation on  {gui.mod_ttl_channel_vars[i].get()}: {e}')
+                        return None
 
             # load the processing as the preset masks for the second (real) acquisition
             for i, enabled_var in enumerate(gui.mod_enabled_vars): 

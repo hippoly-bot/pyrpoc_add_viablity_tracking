@@ -39,7 +39,7 @@ def run_scan(ai_channels, galvo, modulate=False, mod_do_chans=None, mod_masks=No
             ttl_signals = []
             for m in mod_masks:
                 m_arr = np.array(m) if isinstance(m, Image.Image) else m
-                m_arr = m_arr > 0.45
+                m_arr = m_arr > 0 # pretty sure that its a unint8, could be 0 to 1 as well so to be safe just > 0
                 padded = []
                 for row in range(galvo.numsteps_y):
                     padded_row = np.concatenate((

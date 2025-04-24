@@ -778,6 +778,8 @@ class GUI:
         self.mod_mask_entries = []
         self.mod_loadmask_buttons = []
         self.mod_enabled_vars = []
+        self.mod_masks = {}
+        self.mod_scripts = {}
 
         ttk.Label(self.mod_channels_frame, text="DO Channel").grid(row=0, column=0, padx=5)
         ttk.Label(self.mod_channels_frame, text="Mask (.py for auto-process)").grid(row=0, column=1, columnspan=2, padx=5)
@@ -837,7 +839,7 @@ class GUI:
             filetypes=[("Mask Files", "*.mask *.json *.txt *.png *.py"), ("All Files", "*.*")]
         )
         if not file_path:
-            return  # User cancelled
+            return  
 
         filename = os.path.basename(file_path)
         is_script = file_path.endswith(".py")
