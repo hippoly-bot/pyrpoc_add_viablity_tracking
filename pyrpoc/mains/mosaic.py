@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QGroupBox, QGridLayout, QLabel, QSpinBox,
-    QComboBox, QPushButton, QScrollArea, QWidget, QCheckBox
+    QComboBox, QPushButton, QScrollArea, QWidget, QCheckBox, QFileDialog,
+    QHBoxLayout
 )
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QTimer
@@ -8,6 +9,9 @@ from pyrpoc.mains import acquisition
 from pyrpoc.helpers.prior_stage.functions import *
 import numpy as np
 import random
+import json
+import os
+from PIL import Image
 
 class ZoomableLabel(QLabel):
     def __init__(self, scroll_area=None):
@@ -83,11 +87,38 @@ class MosaicDialog(QDialog):
         self.setWindowTitle("Mosaic Imaging")
         self.main_gui = main_gui
         self.cancelled = False
-        self.layout = QVBoxLayout(self)
-
         self.setAttribute(Qt.WA_DeleteOnClose)
         self.setFocusPolicy(Qt.StrongFocus)
+        self.resize(1200, 800)
 
+        main_layout = QHBoxLayout(self)
+        self.setLayout(main_layout)
+
+        # === Left Panel ===
+        self.sidebar_widget = QWidget()
+        self.sidebar_layout = QVBoxLayout(self.sidebar_widget)
+        self.sidebar_layout.setContentsMargins(10, 10, 10, 10)
+        self.sidebar_layout.setSpacing(12)
+        self.sidebar_widget.setFixedWidth(300)
+
+        # Save options group
+        self.save_group = QGroupBox("Save Options")
+        save_layout = QGridLayout(self.save_group)
+
+        self.save_settings_checkbox = QCheckBox("Save Settings (JSON)")
+        self.save_metadata_checkbox = QCheckBox("Save Metadata")
+        self.save_stitched_checkbox = QCheckBox("Save Stitched TIFF")
+        self.save_tiles_checkbox = QCheckBox("Save Individual Tiles")
+
+        self.save_settings_checkbox.setChecked(True)
+        self.save_stitched_checkbox.setChecked(True)
+
+        save_layout.addWidget(self.save_settings_checkbox, 0, 0)
+        save_layout.addWidget(self.save_metadata_checkbox, 1, 0)
+        save_layout.addWidget(self.save_stitched_checkbox, 2, 0)
+        save_layout.addWidget(self.save_tiles_checkbox, 3, 0)
+
+        # Mosaic parameters group
         params_group = QGroupBox("Mosaic Parameters")
         params_layout = QGridLayout(params_group)
 
@@ -101,38 +132,46 @@ class MosaicDialog(QDialog):
 
         params_layout.addWidget(QLabel("Rows:"), 0, 0)
         params_layout.addWidget(self.rows_spin, 0, 1)
-        params_layout.addWidget(QLabel("Columns:"), 0, 2)
-        params_layout.addWidget(self.cols_spin, 0, 3)
-        params_layout.addWidget(QLabel("Overlap (%):"), 1, 0)
-        params_layout.addWidget(self.overlap_spin, 1, 1)
-        params_layout.addWidget(QLabel("Pattern:"), 2, 0)
-        params_layout.addWidget(self.pattern_combo, 2, 1)
-        params_layout.addWidget(QLabel("FOV Size (μm):"), 3, 0)
-        params_layout.addWidget(self.fov_um_spin, 3, 1)
-        params_layout.addWidget(self.grid_checkbox, 4, 0, 1, 2)
+        params_layout.addWidget(QLabel("Columns:"), 1, 0)
+        params_layout.addWidget(self.cols_spin, 1, 1)
+        params_layout.addWidget(QLabel("Overlap (%):"), 2, 0)
+        params_layout.addWidget(self.overlap_spin, 2, 1)
+        params_layout.addWidget(QLabel("Pattern:"), 3, 0)
+        params_layout.addWidget(self.pattern_combo, 3, 1)
+        params_layout.addWidget(QLabel("FOV Size (μm):"), 4, 0)
+        params_layout.addWidget(self.fov_um_spin, 4, 1)
+        params_layout.addWidget(self.grid_checkbox, 5, 0, 1, 2)
 
-        self.layout.addWidget(params_group)
+        # Buttons
+        self.start_button = QPushButton("Start Mosaic Imaging")
+        self.start_button.setAutoDefault(False)
+        self.start_button.setDefault(False)
+        self.start_button.clicked.connect(self.prepare_run)
+
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.cancel_mosaic)
+
+        # Assemble left panel
+        self.sidebar_layout.addWidget(self.save_group)
+        self.sidebar_layout.addWidget(params_group)
+        self.sidebar_layout.addWidget(self.start_button)
+        self.sidebar_layout.addWidget(self.cancel_button)
+        self.sidebar_layout.addStretch()
+        main_layout.addWidget(self.sidebar_widget)
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.display_label = ZoomableLabel(scroll_area=self.scroll_area)
         self.scroll_area.setWidget(self.display_label)
-        self.layout.addWidget(self.scroll_area)
-
-        self.start_button = QPushButton("Start Mosaic Imaging")
-        self.start_button.setAutoDefault(False)
-        self.start_button.setDefault(False)
-        self.start_button.clicked.connect(self.prepare_run)
-        self.layout.addWidget(self.start_button)
-
-        self.cancel_button = QPushButton("Cancel")
-        self.cancel_button.clicked.connect(self.cancel_mosaic)
-        self.layout.addWidget(self.cancel_button)
 
         self.status_label = QLabel("")
-        self.layout.addWidget(self.status_label)
+        self.status_label.setWordWrap(True)
 
-        self.resize(1200, 800)
+        right_layout = QVBoxLayout()
+        right_layout.addWidget(self.scroll_area)
+        right_layout.addWidget(self.status_label)
+
+        main_layout.addLayout(right_layout, stretch=1)
 
     def keyPressEvent(self, event):
         if event.key() in (Qt.Key_Return, Qt.Key_Enter):
@@ -195,6 +234,7 @@ class MosaicDialog(QDialog):
         if self.cancelled or not self._tile_order:
             self.update_status("Mosaic acquisition complete.")
             self.update_display()
+            self.save_mosaic()
             return
 
         i, j, dx_um, dy_um, dx_px, dy_px = self._tile_order.pop(0)
@@ -264,3 +304,43 @@ class MosaicDialog(QDialog):
         pixmap = QPixmap.fromImage(image)
         self.display_label.setPixmap(pixmap)
         self.display_label.repaint_scaled()
+
+    def save_mosaic(self):
+        save_dir = QFileDialog.getExistingDirectory(self, "Select Save Folder")
+        if not save_dir:
+            self.update_status("Save cancelled.")
+            return
+
+        if self.save_settings_checkbox.isChecked():
+            settings = {
+                "rows": self._rows,
+                "cols": self._cols,
+                "overlap": self._overlap,
+                "pattern": self._pattern,
+                "fov_um": self._fov_um
+            }
+            with open(os.path.join(save_dir, "mosaic_settings.json"), "w") as f:
+                json.dump(settings, f, indent=2)
+
+        if self.save_metadata_checkbox.isChecked():
+            metadata = {
+                "tile_order": self._tile_order,
+                "initial_position": (self._x0, self._y0)
+            }
+            with open(os.path.join(save_dir, "mosaic_metadata.json"), "w") as f:
+                json.dump(metadata, f, indent=2)
+
+        if self.save_stitched_checkbox.isChecked():
+            stitched_img = (np.clip(self.mosaic_rgb, 0, 1) * 255).astype(np.uint8)
+            Image.fromarray(stitched_img).save(os.path.join(save_dir, "stitched_mosaic.tif"))
+
+        if self.save_tiles_checkbox.isChecked():
+            tile_dir = os.path.join(save_dir, "tiles")
+            os.makedirs(tile_dir, exist_ok=True)
+            for idx, (i, j, _, _, dx, dy) in enumerate(self._tile_order):
+                tile = self.mosaic_rgb[dy:dy+self._tile_h, dx:dx+self._tile_w]
+                tile_img = (np.clip(tile, 0, 1) * 255).astype(np.uint8)
+                tile_name = f"tile_{i}_{j}.tif"
+                Image.fromarray(tile_img).save(os.path.join(tile_dir, tile_name))
+
+        self.update_status("Mosaic saved.")
