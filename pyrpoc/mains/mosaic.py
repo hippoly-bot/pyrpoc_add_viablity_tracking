@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QGroupBox, QGridLayout, QLabel, QSpinBox,
     QComboBox, QPushButton, QScrollArea, QWidget, QCheckBox, QFileDialog,
-    QHBoxLayout
+    QHBoxLayout, QLineEdit
 )
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QTimer
@@ -105,18 +105,25 @@ class MosaicDialog(QDialog):
         self.save_group = QGroupBox("Save Options")
         save_layout = QGridLayout(self.save_group)
 
-        self.save_settings_checkbox = QCheckBox("Save Settings (JSON)")
-        self.save_metadata_checkbox = QCheckBox("Save Metadata")
+        save_layout.addWidget(QLabel("Save Folder:"), 0, 0)
+        self.save_folder_entry = QLineEdit()
+        self.save_folder_entry.setPlaceholderText("Select folder...")
+        save_layout.addWidget(self.save_folder_entry, 0, 1)
+        browse_btn = QPushButton("📂")
+        browse_btn.clicked.connect(self.browse_save_folder)
+        save_layout.addWidget(browse_btn, 0, 2)
+
+        self.save_metadata_checkbox = QCheckBox("Save Metadata (.json)")
         self.save_stitched_checkbox = QCheckBox("Save Stitched TIFF")
         self.save_tiles_checkbox = QCheckBox("Save Individual Tiles")
 
-        self.save_settings_checkbox.setChecked(True)
+        self.save_metadata_checkbox.setChecked(True)
         self.save_stitched_checkbox.setChecked(True)
+        self.save_tiles_checkbox.setChecked(True)
 
-        save_layout.addWidget(self.save_settings_checkbox, 0, 0)
-        save_layout.addWidget(self.save_metadata_checkbox, 1, 0)
-        save_layout.addWidget(self.save_stitched_checkbox, 2, 0)
-        save_layout.addWidget(self.save_tiles_checkbox, 3, 0)
+        save_layout.addWidget(self.save_metadata_checkbox, 1, 0, 1, 3)
+        save_layout.addWidget(self.save_stitched_checkbox, 2, 0, 1, 3)
+        save_layout.addWidget(self.save_tiles_checkbox, 3, 0, 1, 3)
 
         # Mosaic parameters group
         params_group = QGroupBox("Mosaic Parameters")
@@ -187,6 +194,15 @@ class MosaicDialog(QDialog):
         self.update_status("Mosaic acquisition cancelled.")
 
     def prepare_run(self):
+        self.save_dir = self.save_folder_entry.text().strip()
+        if not self.save_dir:
+            self.update_status("Please select a folder to save results.")
+            return
+        os.makedirs(self.save_dir, exist_ok=True)
+        if self.save_tiles_checkbox.isChecked():
+            self.tile_dir = os.path.join(self.save_dir, "tiles")
+            os.makedirs(self.tile_dir, exist_ok=True)
+
         self.cancelled = False
         self._rows = self.rows_spin.value()
         self._cols = self.cols_spin.value()
@@ -230,6 +246,8 @@ class MosaicDialog(QDialog):
         self.update_status("Starting mosaic...")
         QTimer.singleShot(0, self.process_next_tile)
 
+        self._tile_order_orig = list(self._tile_order)
+
     def process_next_tile(self):
         if self.cancelled or not self._tile_order:
             self.update_status("Mosaic acquisition complete.")
@@ -258,6 +276,13 @@ class MosaicDialog(QDialog):
         data = getattr(self.main_gui, 'data', None)
         if not data or not isinstance(data, (list, tuple)) or len(data) == 0:
             return
+
+        if self.save_tiles_checkbox.isChecked():
+            for ch, frame in enumerate(data):
+                vmin, vmax = np.min(frame), np.max(frame)
+                norm = (frame - vmin) / (vmax - vmin) if vmax > vmin else np.zeros_like(frame)
+                img = Image.fromarray((norm * 255).astype(np.uint8))
+                img.save(os.path.join(self.tile_dir, f"tile_{i}_{j}_ch{ch}.tif"))
 
         visibility = getattr(self.main_gui, 'image_visibility', [True] * len(data))
         colors = getattr(self.main_gui, 'image_colors', [(255, 0, 0), (0, 255, 0), (0, 0, 255)])
@@ -305,42 +330,27 @@ class MosaicDialog(QDialog):
         self.display_label.setPixmap(pixmap)
         self.display_label.repaint_scaled()
 
-    def save_mosaic(self):
-        save_dir = QFileDialog.getExistingDirectory(self, "Select Save Folder")
-        if not save_dir:
-            self.update_status("Save cancelled.")
-            return
+    def browse_save_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Save Folder")
+        if folder:
+            self.save_folder_entry.setText(folder)
 
-        if self.save_settings_checkbox.isChecked():
-            settings = {
+    def save_mosaic(self):
+        if self.save_metadata_checkbox.isChecked():
+            metadata = {
                 "rows": self._rows,
                 "cols": self._cols,
                 "overlap": self._overlap,
                 "pattern": self._pattern,
-                "fov_um": self._fov_um
+                "fov_um": self._fov_um,
+                "initial_position": (self._x0, self._y0),
+                "tile_order": [(i, j) for (i, j, *_ ) in self._tile_order_orig]
             }
-            with open(os.path.join(save_dir, "mosaic_settings.json"), "w") as f:
-                json.dump(settings, f, indent=2)
-
-        if self.save_metadata_checkbox.isChecked():
-            metadata = {
-                "tile_order": self._tile_order,
-                "initial_position": (self._x0, self._y0)
-            }
-            with open(os.path.join(save_dir, "mosaic_metadata.json"), "w") as f:
+            with open(os.path.join(self.save_dir, "mosaic_metadata.json"), "w") as f:
                 json.dump(metadata, f, indent=2)
 
         if self.save_stitched_checkbox.isChecked():
             stitched_img = (np.clip(self.mosaic_rgb, 0, 1) * 255).astype(np.uint8)
-            Image.fromarray(stitched_img).save(os.path.join(save_dir, "stitched_mosaic.tif"))
-
-        if self.save_tiles_checkbox.isChecked():
-            tile_dir = os.path.join(save_dir, "tiles")
-            os.makedirs(tile_dir, exist_ok=True)
-            for idx, (i, j, _, _, dx, dy) in enumerate(self._tile_order):
-                tile = self.mosaic_rgb[dy:dy+self._tile_h, dx:dx+self._tile_w]
-                tile_img = (np.clip(tile, 0, 1) * 255).astype(np.uint8)
-                tile_name = f"tile_{i}_{j}.tif"
-                Image.fromarray(tile_img).save(os.path.join(tile_dir, tile_name))
+            Image.fromarray(stitched_img).save(os.path.join(self.save_dir, "stitched_mosaic.tif"))
 
         self.update_status("Mosaic saved.")
