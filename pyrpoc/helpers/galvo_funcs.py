@@ -42,15 +42,15 @@ class Galvo:
             self.waveform = self.gen_raster()
 
     def gen_raster(self):
+        contained_rowsamples = self.pixel_samples * self.numsteps_x
         total_rowsamples = self.pixel_samples * self.total_x
         self.total_samples = total_rowsamples * self.total_y
 
-        single_row_ramp = np.linspace(
-            self.offset_x - self.amp_x,
-            self.offset_x + self.amp_x,
-            total_rowsamples,
-            endpoint=False
-        )
+        step_size = (2 * self.amp_x)/(contained_rowsamples)
+        bottom = self.offset_x - self.amp_x - (step_size * self.extrasteps_left)
+        top = self.offset_x + self.amp_x + (step_size * self.extrasteps_right)
+
+        single_row_ramp = np.linspace(bottom, top, total_rowsamples, endpoint=False)
         x_waveform = np.tile(single_row_ramp, self.total_y)
 
         y_steps = np.linspace(
