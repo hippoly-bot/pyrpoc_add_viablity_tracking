@@ -193,9 +193,6 @@ def estimate_fov(gui, port: int, channel_name: str, initial_step_um: int = 10, m
     return shift_x
 
 
-
-
-
 def move_z(port: int, z_height: int):
     connect_prior(port)
 
