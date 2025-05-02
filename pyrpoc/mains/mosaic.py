@@ -94,14 +94,12 @@ class MosaicDialog(QDialog):
         main_layout = QHBoxLayout(self)
         self.setLayout(main_layout)
 
-        # === Left Panel ===
         self.sidebar_widget = QWidget()
         self.sidebar_layout = QVBoxLayout(self.sidebar_widget)
         self.sidebar_layout.setContentsMargins(10, 10, 10, 10)
         self.sidebar_layout.setSpacing(12)
         self.sidebar_widget.setFixedWidth(300)
 
-        # Save options group
         self.save_group = QGroupBox("Save Options")
         save_layout = QGridLayout(self.save_group)
 
@@ -125,7 +123,6 @@ class MosaicDialog(QDialog):
         save_layout.addWidget(self.save_stitched_checkbox, 2, 0, 1, 3)
         save_layout.addWidget(self.save_tiles_checkbox, 3, 0, 1, 3)
 
-        # Mosaic parameters group
         params_group = QGroupBox("Mosaic Parameters")
         params_layout = QGridLayout(params_group)
 
@@ -149,7 +146,6 @@ class MosaicDialog(QDialog):
         params_layout.addWidget(self.fov_um_spin, 4, 1)
         params_layout.addWidget(self.grid_checkbox, 5, 0, 1, 2)
 
-        # Buttons
         self.start_button = QPushButton("Start Mosaic Imaging")
         self.start_button.setAutoDefault(False)
         self.start_button.setDefault(False)
@@ -158,7 +154,6 @@ class MosaicDialog(QDialog):
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.cancel_mosaic)
 
-        # Assemble left panel
         self.sidebar_layout.addWidget(self.save_group)
         self.sidebar_layout.addWidget(params_group)
         self.sidebar_layout.addWidget(self.start_button)
