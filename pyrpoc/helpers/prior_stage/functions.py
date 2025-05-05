@@ -78,7 +78,7 @@ def wait_for_z_motion():
 
         time.sleep(0.1)
 
-def auto_focus(gui, port: int, channel_name: str, step_size=10):
+def auto_focus(gui, port: int, channel_name: str, step_size=10, numsteps=21):
     connect_prior(port)
 
     gui.simulation_mode.set(False)
@@ -97,7 +97,7 @@ def auto_focus(gui, port: int, channel_name: str, step_size=10):
     except ValueError:
         raise RuntimeError(f"Invalid Z position response: '{current_z}'")
 
-    z_positions = [current_z + i * step_size for i in range(-10, 11)]  # total of 21 points
+    z_positions = [current_z + i * step_size for i in range(0 - int(numsteps/2), 0 + int(numsteps/2))]  # total of 21 points
     best_focus = -1
     best_z = current_z
 
