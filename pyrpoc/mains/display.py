@@ -3,8 +3,8 @@ import math
 import tkinter as tk
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.colors import ListedColormap
+from PIL import Image
 
-# the axes updating and the dynamic colorbars are wizardry from chatgpt, thanks john AI
 def create_axes(gui, n_channels):
     gui.fig.clf()
     gui.fig.patch.set_facecolor('#1E1E1E')
@@ -68,19 +68,12 @@ def display_data(gui, data_list):
             channel_name = gui.config['channel_names'][i]
         else:
             channel_name = gui.config['ai_chans'][i] if i < len(gui.config['ai_chans']) else f"chan{i}"
-
         ax_main.set_title(channel_name, fontsize=10, color='white')
 
-        x_extent = np.linspace(
-            gui.config['offset_x'] - gui.config['amp_x'],
-            gui.config['offset_x'] + gui.config['amp_x'],
-            nx
-        )
-        y_extent = np.linspace(
-            gui.config['offset_y'] + gui.config['amp_y'],
-            gui.config['offset_y'] - gui.config['amp_y'],
-            ny
-        )
+        x_extent = np.linspace(gui.config['offset_x'] - gui.config['amp_x'],
+                               gui.config['offset_x'] + gui.config['amp_x'], nx)
+        y_extent = np.linspace(gui.config['offset_y'] + gui.config['amp_y'],
+                               gui.config['offset_y'] - gui.config['amp_y'], ny)
 
         if ch_ax["img_handle"] is None:
             im = ax_main.imshow(
@@ -94,8 +87,8 @@ def display_data(gui, data_list):
             gui.slice_x[i] = nx // 2
             gui.slice_y[i] = ny // 2
 
-            ch_ax["vline"] = ax_main.axvline(x=[x_extent[gui.slice_x[i]]], color='red', linestyle='--', lw=2)
-            ch_ax["hline"] = ax_main.axhline(y=[y_extent[gui.slice_y[i]]], color='blue', linestyle='--', lw=2)
+            ch_ax["vline"] = ax_main.axvline(x=x_extent[gui.slice_x[i]], color='red', linestyle='--', lw=2)
+            ch_ax["hline"] = ax_main.axhline(y=y_extent[gui.slice_y[i]], color='blue', linestyle='--', lw=2)
 
             cax = ax_main.inset_axes([1.05, 0, 0.05, 1])
             cb = gui.fig.colorbar(im, cax=cax, orientation='vertical')
@@ -113,16 +106,13 @@ def display_data(gui, data_list):
             if auto_scale:
                 im.set_clim(vmin=data.min(), vmax=data.max())
             else:
-                # fixed color
                 fixed_strvar = gui.fixed_colorbar_vars.get(channel_name, tk.StringVar(value=""))
                 try:
                     fixed_max = float(fixed_strvar.get())
                     if fixed_max < data.min():
-                        # clamp if user typed something too small
                         fixed_max = data.max()
                     im.set_clim(vmin=data.min(), vmax=fixed_max)
                 except ValueError:
-                    # fallback
                     im.set_clim(vmin=data.min(), vmax=data.max())
 
             im.set_extent([x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]])
@@ -137,56 +127,41 @@ def display_data(gui, data_list):
 
         # horizontal slice
         ax_hslice = ch_ax["hslice"]
-        ax_hslice.clear()
-        ax_hslice.plot(x_extent, data[sy, :], color='blue', linewidth=1)
-        ax_hslice.yaxis.tick_right()
-        ax_hslice.tick_params(axis='both', labelsize=8)
-        ax_hslice.set_xlim(x_extent[0], x_extent[-1])
+        if "hslice_line" not in ch_ax or ch_ax["hslice_line"] is None:
+            ch_ax["hslice_line"], = ax_hslice.plot(x_extent, data[sy, :], color='blue', linewidth=1)
+            ax_hslice.yaxis.tick_right()
+            ax_hslice.set_xlim(x_extent[0], x_extent[-1])
+        else:
+            ch_ax["hslice_line"].set_data(x_extent, data[sy, :])
 
         # vertical slice
         ax_vslice = ch_ax["vslice"]
-        ax_vslice.clear()
-        ax_vslice.plot(data[:, sx], y_extent, color='red', linewidth=1)
-        ax_vslice.tick_params(axis='both', labelsize=8)
-        ax_vslice.set_ylim(y_extent[-1], y_extent[0])
+        if "vslice_line" not in ch_ax or ch_ax["vslice_line"] is None:
+            ch_ax["vslice_line"], = ax_vslice.plot(data[:, sx], y_extent, color='red', linewidth=1)
+            ax_vslice.set_ylim(y_extent[-1], y_extent[0])
+        else:
+            ch_ax["vslice_line"].set_data(data[:, sx], y_extent)
 
-        if "mask_handle" not in ch_ax:
-            ch_ax["mask_handle"] = None
-
-        if gui.show_mask_var.get() and hasattr(gui, "mod_masks"):
-            # Pick some visually distinct RGBA colors
+        # overlays
+        if gui.show_mask_var.get() and hasattr(gui, "mod_masks") and not getattr(gui, "skip_overlays", False):
             overlay_colors = [
-                (1.0, 0.0, 0.0, 0.4),  # red
-                (0.0, 1.0, 0.0, 0.4),  # green
-                (0.0, 0.0, 1.0, 0.4),  # blue
-                (1.0, 1.0, 0.0, 0.4),  # yellow
-                (1.0, 0.0, 1.0, 0.4),  # magenta
-                (0.0, 1.0, 1.0, 0.4),  # cyan
+                (1.0, 0.0, 0.0, 0.4), (0.0, 1.0, 0.0, 0.4), (0.0, 0.0, 1.0, 0.4),
+                (1.0, 1.0, 0.0, 0.4), (1.0, 0.0, 1.0, 0.4), (0.0, 1.0, 1.0, 0.4)
             ]
-
             if "mask_handles" not in ch_ax:
                 ch_ax["mask_handles"] = []
 
-            # Remove old overlays
             for h in ch_ax["mask_handles"]:
                 h.remove()
             ch_ax["mask_handles"] = []
 
             for idx, enabled_var in enumerate(getattr(gui, "mod_enabled_vars", [])):
-                if not enabled_var.get():
-                    continue
-                if idx not in gui.mod_masks:
+                if not enabled_var.get() or idx not in gui.mod_masks:
                     continue
                 mask_img = gui.mod_masks[idx]
                 mask_arr = np.array(mask_img.convert('L')) > 0
-
                 if mask_arr.shape != (ny, nx):
-                    from PIL import Image
-                    mask_arr = Image.fromarray(mask_arr.astype(np.uint8) * 255)
-                    mask_arr = mask_arr.resize((nx, ny), Image.NEAREST)
-                    mask_arr = np.array(mask_arr) > 0
-
-                # Make RGBA overlay
+                    mask_arr = np.array(mask_img.resize((nx, ny), Image.NEAREST)) > 0
                 color = overlay_colors[idx % len(overlay_colors)]
                 rgba_mask = np.zeros((ny, nx, 4), dtype=np.float32)
                 rgba_mask[..., 0] = color[0] * mask_arr
@@ -194,19 +169,17 @@ def display_data(gui, data_list):
                 rgba_mask[..., 2] = color[2] * mask_arr
                 rgba_mask[..., 3] = color[3] * mask_arr
 
-                overlay = ax_main.imshow(rgba_mask, extent=[x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]],
+                overlay = ax_main.imshow(rgba_mask,
+                                         extent=[x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]],
                                          origin='upper', aspect='equal')
                 ch_ax["mask_handles"].append(overlay)
         else:
-            # Hide/remove overlays
-            if "mask_handles" in ch_ax:
-                for h in ch_ax["mask_handles"]:
-                    h.remove()
-                ch_ax["mask_handles"] = []
-
-
+            for h in ch_ax.get("mask_handles", []):
+                h.remove()
+            ch_ax["mask_handles"] = []
 
     gui.canvas.draw_idle()
+
 
 def on_image_click(gui, event):
     if str(gui.toolbar.mode) in ["zoom rect", "pan/zoom"]:
