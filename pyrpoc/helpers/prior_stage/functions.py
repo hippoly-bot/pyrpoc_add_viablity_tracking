@@ -145,52 +145,33 @@ def auto_focus(gui, port: int, channel_name: str, step_size=10):
     return best_z, best_focus
 
 
-def estimate_fov(gui, port: int, channel_name: str, initial_step_um: int = 10, max_attempts: int = 15):
+def estimate_fov(gui, port: int, channel_name: str, step_um: int = 10):
     connect_prior(port)
     gui.simulation_mode.set(False)
     gui.acquiring = True
 
-    try:
-        channel_index = gui.config["channel_names"].index(channel_name)
-    except ValueError:
-        raise RuntimeError(f"Invalid channel name: '{channel_name}'")
-
-    try:
-        x0, y0 = get_xy(port)
-    except Exception as e:
-        gui.acquiring = False
-        raise RuntimeError(f"Could not read stage position: {e}")
+    channel_index = gui.config["channel_names"].index(channel_name)
+    x0, y0 = get_xy(port)
 
     acquisition.acquire(gui, auxilary=True)
-    ref_img = gui.data[channel_index]
-    ref_crop = ref_img[int(ref_img.shape[0]*0.25):int(ref_img.shape[0]*0.75),
-                      int(ref_img.shape[1]*0.25):int(ref_img.shape[1]*0.75)]
+    ref_img = gui.data[channel_index].astype(np.float32)
 
-    shift_x = initial_step_um
-    best_match = 0
+    move_xy(port, x0 + step_um, y0)
+    time.sleep(0.2)
+    acquisition.acquire(gui, auxilary=True)
+    shifted_img = gui.data[channel_index].astype(np.float32)
 
-    for attempt in range(1, max_attempts + 1):
-        try:
-            move_xy(port, x0 + shift_x, y0)
-            time.sleep(0.2)
-            acquisition.acquire(gui, auxilary=True)
-            new_img = gui.data[channel_index]
-            new_crop = new_img[int(new_img.shape[0]*0.25):int(new_img.shape[0]*0.75),
-                               int(new_img.shape[1]*0.25):int(new_img.shape[1]*0.75)]
+    shift, _ = cv2.phaseCorrelate(ref_img, shifted_img)
+    delta_pixels = abs(shift[0])  # assume x-shift
 
-            # cross correlation based similarity index
-            match = cv2.matchTemplate(ref_crop, new_crop, cv2.TM_CCOEFF_NORMED)[0][0]
-            print(f"Step {shift_x} µm → NCC Match: {match:.4f}")
+    if delta_pixels == 0:
+        raise RuntimeError("Phase correlation failed — no shift detected")
 
-            if match < 0.1:
-                break
-            shift_x += initial_step_um
-        except Exception as e:
-            print(f"[Estimate FOV] Step {shift_x} failed: {e}")
-            break
+    pixel_size_um = step_um / delta_pixels
+    fov_um = ref_img.shape[1] * pixel_size_um
 
     gui.acquiring = False
-    return shift_x
+    return fov_um
 
 
 def move_z(port: int, z_height: int):

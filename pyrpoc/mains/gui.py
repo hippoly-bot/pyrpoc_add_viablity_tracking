@@ -355,7 +355,7 @@ class GUI:
             self.delay_stage_frame.columnconfigure(col, weight=1)
 
         ttk.Label(self.delay_stage_frame, text="Zaber Port (COM #)").grid(
-            row=0, column=0, padx=5, pady=3, sticky="w"
+            row=0, column=0, padx=5, pady=3, sticky="e"
         )
         self.zaber_port_entry = ttk.Entry(self.delay_stage_frame, width=10)
         self.zaber_port_entry.insert(0, self.config['zaber_chan'])
@@ -384,20 +384,20 @@ class GUI:
         for col in range(3):
             self.hyperspec_frame.columnconfigure(col, weight=1)
 
-        ttk.Label(self.hyperspec_frame, text="Start (µm)").grid(row=0, column=0, sticky="w", padx=5, pady=3)
+        ttk.Label(self.hyperspec_frame, text="Start (µm)").grid(row=0, column=0, sticky="e", padx=5, pady=3)
         self.entry_start_um = ttk.Entry(self.hyperspec_frame, width=10)
         self.entry_start_um.insert(0, str(self.hyper_config['start_um']))
-        self.entry_start_um.grid(row=0, column=2, padx=5, pady=3, sticky="ew")
+        self.entry_start_um.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
 
-        ttk.Label(self.hyperspec_frame, text="Stop (µm)").grid(row=1, column=0, sticky="w", padx=5, pady=3)
+        ttk.Label(self.hyperspec_frame, text="Stop (µm)").grid(row=1, column=0, sticky="e", padx=5, pady=3)
         self.entry_stop_um = ttk.Entry(self.hyperspec_frame, width=10)
         self.entry_stop_um.insert(0, str(self.hyper_config['stop_um']))
-        self.entry_stop_um.grid(row=1, column=2, padx=5, pady=3, sticky="ew")
+        self.entry_stop_um.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
 
-        ttk.Label(self.hyperspec_frame, text="Number of Shifts").grid(row=3, column=0, sticky="w", padx=5, pady=3)
+        ttk.Label(self.hyperspec_frame, text="Number of Shifts").grid(row=3, column=0, sticky="e", padx=5, pady=3)
         self.entry_numshifts = ttk.Entry(self.hyperspec_frame, width=10)
         self.entry_numshifts.insert(0, '10')
-        self.entry_numshifts.grid(row=3, column=2, padx=5, pady=3, sticky="ew")
+        self.entry_numshifts.grid(row=3, column=1, padx=5, pady=3, sticky="ew")
         
         self.analyzer_button = ttk.Button(self.hyperspec_frame, text="Open Spectrum Analyzer",
             command=lambda: self.launch_spectrum_gui())
@@ -450,17 +450,17 @@ class GUI:
         for col in range(3):
             self.z_scan_frame.columnconfigure(col, weight=1)
 
-        ttk.Label(self.z_scan_frame, text="Z Start (µm)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
+        ttk.Label(self.z_scan_frame, text="Z Start (µm)").grid(row=0, column=0, padx=5, pady=3, sticky="e")
         self.entry_z_start = ttk.Entry(self.z_scan_frame, width=10)
         self.entry_z_start.insert(0, "900")
         self.entry_z_start.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
 
-        ttk.Label(self.z_scan_frame, text="Z Stop (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="w")
+        ttk.Label(self.z_scan_frame, text="Z Stop (µm)").grid(row=1, column=0, padx=5, pady=3, sticky="e")
         self.entry_z_stop = ttk.Entry(self.z_scan_frame, width=10)
         self.entry_z_stop.insert(0, "1000")
         self.entry_z_stop.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
 
-        ttk.Label(self.z_scan_frame, text="Number of Steps").grid(row=2, column=0, padx=5, pady=3, sticky="w")
+        ttk.Label(self.z_scan_frame, text="Number of Steps").grid(row=2, column=0, padx=5, pady=3, sticky="e")
         self.entry_z_steps = ttk.Entry(self.z_scan_frame, width=10)
         self.entry_z_steps.insert(0, "10")
         self.entry_z_steps.grid(row=2, column=1, padx=5, pady=3, sticky="ew")
@@ -472,25 +472,25 @@ class GUI:
         for col in range(3):
             self.z_manual_frame.columnconfigure(col, weight=1)
 
-        ttk.Label(self.z_manual_frame, text="Set Z Height (µm)").grid(row=0, column=0, padx=5, pady=3, sticky="w")
+        ttk.Label(self.z_manual_frame, text="Set Z Height (µm)").grid(row=0, column=0, padx=5, pady=3, sticky="e")
         self.prior_z_entry = ttk.Entry(self.z_manual_frame, width=10)
         self.prior_z_entry.insert(0, "940")
         self.prior_z_entry.grid(row=0, column=1, padx=5, pady=3, sticky="ew")
         self.prior_move_z_button = ttk.Button(self.z_manual_frame, text="Move Z", command=self.move_prior_stage_z)
         self.prior_move_z_button.grid(row=0, column=2, padx=5, pady=3, sticky="ew")
 
-        ttk.Label(self.z_manual_frame, text="Set X Y").grid(row=1, column=0, padx=5, pady=3, sticky="w")
+        ttk.Label(self.z_manual_frame, text="Set X Y").grid(row=1, column=0, padx=5, pady=3, sticky="e")
         self.prior_pos_entry = ttk.Entry(self.z_manual_frame, width=10)
         self.prior_pos_entry.insert(0, "1000, 1000")
         self.prior_pos_entry.grid(row=1, column=1, padx=5, pady=3, sticky="ew")
         self.prior_move_pos_button = ttk.Button(self.z_manual_frame, text="Move X Y", command=self.move_prior_stage_xy)
         self.prior_move_pos_button.grid(row=1, column=2, padx=5, pady=3, sticky="ew")
 
-        ttk.Label(self.z_manual_frame, text="Auto-focus chan:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        ttk.Label(self.z_manual_frame, text="Auto-analysis chan:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
         self.af_channel_var = tk.StringVar(value="505")
         self.af_channel_entry = ttk.Entry(self.z_manual_frame, textvariable=self.af_channel_var, width=10)
         self.af_channel_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
-        ttk.Label(self.z_manual_frame, text="Spacing (µm):").grid(row=3, column=0, sticky="e", padx=5, pady=5)
+        ttk.Label(self.z_manual_frame, text="Autofocus Spacing (µm):").grid(row=3, column=0, sticky="e", padx=5, pady=5)
         self.af_spacing_var = tk.StringVar(value="1")
         self.af_spacing_entry = ttk.Entry(self.z_manual_frame, textvariable=self.af_spacing_var, width=10)
         self.af_spacing_entry.grid(row=3, column=1, padx=5, pady=5, sticky="ew")
@@ -745,9 +745,10 @@ class GUI:
         channel_name = self.af_channel_var.get().strip()
         try:
             result = prior.estimate_fov(self, port, channel_name)
-            self.status_bar.set(f"Estimated FOV width: {result} µm")
+            messagebox.showinfo(f'Estimation complete', f'Estimated FOV: {result} um')
+            return result
         except Exception as e:
-            self.status_bar.set(f"FOV estimation failed: {e}")
+            messagebox.showerror('FOV Estimation error', str(e))
 
     ###########################################################
     ##################### RPOC STUFF ##########################

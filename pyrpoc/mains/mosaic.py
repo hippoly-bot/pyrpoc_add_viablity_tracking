@@ -252,7 +252,7 @@ class MosaicDialog(QDialog):
 
         i, j, dx_um, dy_um, dx_px, dy_px = self._tile_order.pop(0)
         try:
-            move_xy(self._port, self._x0 + dx_um, self._y0 + dy_um)
+            move_xy(self._port, self._x0 + dx_um, self._y0 - dy_um)
         except Exception as e:
             self.update_status(f"Move failed: {e}")
             return
@@ -274,8 +274,7 @@ class MosaicDialog(QDialog):
 
         if self.save_tiles_checkbox.isChecked():
             for ch, frame in enumerate(data):
-                vmin, vmax = np.min(frame), np.max(frame)
-                norm = (frame - vmin) / (vmax - vmin) if vmax > vmin else np.zeros_like(frame)
+                norm = frame.astype(np.float32)
                 img = Image.fromarray((norm * 255).astype(np.uint8))
                 img.save(os.path.join(self.tile_dir, f"tile_{i}_{j}_ch{ch}.tif"))
 
@@ -286,8 +285,7 @@ class MosaicDialog(QDialog):
 
         for ch, frame in enumerate(data):
             if ch < len(visibility) and visibility[ch]:
-                vmin, vmax = np.min(frame), np.max(frame)
-                norm = (frame - vmin) / (vmax - vmin) if vmax > vmin else np.zeros_like(frame)
+                norm = frame.astype(np.float32)
                 for c in range(3):
                     tile_rgb[..., c] += norm * (colors[ch][c] / 255.0)
 
@@ -304,7 +302,8 @@ class MosaicDialog(QDialog):
         self.update_display()
 
     def update_display(self):
-        rgb_uint8 = (np.clip(self.mosaic_rgb, 0, 1) * 255).astype(np.uint8)
+        max_val = np.max(self.mosaic_rgb)
+        rgb_uint8 = (self.mosaic_rgb / max_val * 255).astype(np.uint8) if max_val > 0 else np.zeros_like(self.mosaic_rgb, dtype=np.uint8)
         h, w, _ = rgb_uint8.shape
         image = QImage(rgb_uint8.data, w, h, QImage.Format_RGB888)
 
