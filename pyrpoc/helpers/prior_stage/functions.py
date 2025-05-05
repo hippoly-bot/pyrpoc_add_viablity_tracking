@@ -145,7 +145,7 @@ def auto_focus(gui, port: int, channel_name: str, step_size=10, numsteps=21):
     return best_z, best_focus
 
 
-def estimate_fov(gui, port: int, channel_name: str, step_um: int = 10):
+def estimate_fov(gui, port: int, channel_name: str, step_um: int = 10, iterations: int = 5) -> float:
     connect_prior(port)
     gui.simulation_mode.set(False)
     gui.acquiring = True
@@ -153,25 +153,34 @@ def estimate_fov(gui, port: int, channel_name: str, step_um: int = 10):
     channel_index = gui.config["channel_names"].index(channel_name)
     x0, y0 = get_xy(port)
 
-    acquisition.acquire(gui, auxilary=True)
-    ref_img = gui.data[channel_index].astype(np.float32)
+    pixel_shifts = []
 
-    move_xy(port, x0 + step_um, y0)
-    time.sleep(0.2)
-    acquisition.acquire(gui, auxilary=True)
-    shifted_img = gui.data[channel_index].astype(np.float32)
+    for i in range(iterations):
+        x_start = x0 + i * 2 * step_um  # increase distance each time to avoid reusing same region
+        move_xy(port, x_start, y0)
+        time.sleep(0.2)
+        acquisition.acquire(gui, auxilary=True)
+        ref_img = gui.data[channel_index].astype(np.float32)
 
-    shift, _ = cv2.phaseCorrelate(ref_img, shifted_img)
-    delta_pixels = abs(shift[0])  # assume x-shift
+        move_xy(port, x_start + step_um, y0)
+        time.sleep(0.2)
+        acquisition.acquire(gui, auxilary=True)
+        shifted_img = gui.data[channel_index].astype(np.float32)
 
-    if delta_pixels == 0:
-        raise RuntimeError("Phase correlation failed — no shift detected")
+        shift, _ = cv2.phaseCorrelate(ref_img, shifted_img)
+        delta_pixels = abs(shift[0])
 
-    pixel_size_um = step_um / delta_pixels
-    fov_um = ref_img.shape[1] * pixel_size_um
+        if delta_pixels == 0:
+            raise RuntimeError(f"Phase correlation failed on iteration {i+1} — no shift detected")
+        pixel_shifts.append(delta_pixels)
 
     gui.acquiring = False
+
+    median_pixel_shift = np.median(pixel_shifts)
+    pixel_size_um = step_um / median_pixel_shift
+    fov_um = ref_img.shape[1] * pixel_size_um
     return fov_um
+
 
 
 def move_z(port: int, z_height: int):
