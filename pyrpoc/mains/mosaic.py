@@ -303,18 +303,8 @@ class MosaicDialog(QDialog):
         self.blend_tile(i, j, dx_px, dy_px)
         
         if not self._simulate:
-            self._tile_counter += 1
-
-            if self._af_enabled and self._tile_counter % self._af_interval == 0:
-                task = AutofocusTask(
-                    self.main_gui,
-                    self._port,
-                    self._chan,
-                    step_size=self._af_stepsize,
-                    numsteps=self._af_numsteps,
-                    callback=self.process_next_tile
-                )
-                QThreadPool.globalInstance().start(task)
+            task = AutofocusTask(self.main_gui, self._port, self._chan, callback=self.process_next_tile)
+            QThreadPool.globalInstance().start(task)
         else:
             QTimer.singleShot(100, self.process_next_tile)
 
@@ -401,19 +391,17 @@ class MosaicDialog(QDialog):
         self.update_status("Mosaic saved.")
 
 class AutofocusTask(QRunnable):
-    def __init__(self, gui, port, chan, step_size, numsteps, callback=None):
+    def __init__(self, gui, port, chan, callback=None):
         super().__init__()
         self.gui = gui
         self.port = port
         self.chan = chan
-        self.step_size = step_size
-        self.numsteps = numsteps
         self.callback = callback
 
     @pyqtSlot()
     def run(self):
         try:
-            auto_focus(self.gui, self.port, self.chan, step_size=self.step_size, numsteps=self.numsteps)
+            auto_focus(self.gui, self.port, self.chan, step_size=0.2, numsteps=5)
         except Exception as e:
             print(f"[Autofocus Error] {e}")
         finally:

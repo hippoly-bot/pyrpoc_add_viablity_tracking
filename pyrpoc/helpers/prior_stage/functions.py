@@ -135,6 +135,7 @@ def auto_focus(gui, port: int, channel_name: str, step_size=10, numsteps=21):
     if gui.acquiring:
         send_command(f"controller.z.goto-position {best_z}")
         wait_for_z_motion()
+        print(f'moved to {best_z}')
 
         acquisition.acquire(gui, auxilary=True)
         gui.root.update_idletasks()
@@ -145,7 +146,7 @@ def auto_focus(gui, port: int, channel_name: str, step_size=10, numsteps=21):
     return best_z, best_focus
 
 
-def estimate_fov(gui, port: int, channel_name: str, step_um: int = 10, iterations: int = 5) -> float:
+def estimate_fov(gui, port: int, channel_name: str, step_um: int = 5, iterations: int = 5) -> float:
     connect_prior(port)
     gui.simulation_mode.set(False)
     gui.acquiring = True
