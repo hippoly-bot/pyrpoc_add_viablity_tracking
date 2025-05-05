@@ -1,10 +1,10 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QGroupBox, QGridLayout, QLabel, QSpinBox,
     QComboBox, QPushButton, QScrollArea, QWidget, QCheckBox, QFileDialog,
-    QHBoxLayout, QLineEdit
+    QHBoxLayout, QLineEdit, QDoubleSpinBox
 )
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QRunnable, QThreadPool, pyqtSlot
 from pyrpoc.mains import acquisition
 from pyrpoc.helpers.prior_stage.functions import *
 import numpy as np
@@ -154,8 +154,37 @@ class MosaicDialog(QDialog):
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.clicked.connect(self.cancel_mosaic)
 
+        self.af_group = QGroupBox("Autofocus Settings")
+        af_layout = QGridLayout(self.af_group)
+
+        self.af_enabled_checkbox = QCheckBox("Enable Autofocus")
+        self.af_enabled_checkbox.setChecked(True)
+
+        self.af_every_n_label = QLabel("Tiles per Autofocus:")
+        self.af_every_n_spin = QSpinBox()
+        self.af_every_n_spin.setRange(1, 100)
+        self.af_every_n_spin.setValue(1)
+
+        self.af_numsteps_label = QLabel("Steps per Autofocus:")
+        self.af_numsteps_spin = QSpinBox()
+        self.af_numsteps_spin.setRange(1, 100)
+        self.af_numsteps_spin.setValue(5)
+
+        self.af_stepsize_label = QLabel("Step Size (μm):")
+        self.af_stepsize_spin = QDoubleSpinBox()
+        self.af_stepsize_spin.setDecimals(1)
+        self.af_stepsize_spin.setRange(0.1, 10.0)
+        self.af_stepsize_spin.setValue(0.1)
+        self.af_stepsize_spin.setSingleStep(0.1)
+
+        af_layout.addWidget(self.af_enabled_checkbox, 0, 0, 1, 2)
+        af_layout.addWidget(self.af_every_n_label, 1, 0); af_layout.addWidget(self.af_every_n_spin, 1, 1)
+        af_layout.addWidget(self.af_numsteps_label, 2, 0); af_layout.addWidget(self.af_numsteps_spin, 2, 1)
+        af_layout.addWidget(self.af_stepsize_label, 3, 0); af_layout.addWidget(self.af_stepsize_spin, 3, 1)
+
         self.sidebar_layout.addWidget(self.save_group)
         self.sidebar_layout.addWidget(params_group)
+        self.sidebar_layout.addWidget(self.af_group)
         self.sidebar_layout.addWidget(self.start_button)
         self.sidebar_layout.addWidget(self.cancel_button)
         self.sidebar_layout.addStretch()
@@ -199,11 +228,18 @@ class MosaicDialog(QDialog):
             os.makedirs(self.tile_dir, exist_ok=True)
 
         self.cancelled = False
+        self._chan = self.main_gui.config["channel_names"][0]
+        self._simulate = self.main_gui.simulation_mode.get()
         self._rows = self.rows_spin.value()
         self._cols = self.cols_spin.value()
         self._overlap = self.overlap_spin.value() / 100.0
         self._pattern = self.pattern_combo.currentText()
         self._fov_um = self.fov_um_spin.value()
+        self._af_enabled = self.af_enabled_checkbox.isChecked()
+        self._af_interval = self.af_every_n_spin.value()
+        self._af_numsteps = self.af_numsteps_spin.value()
+        self._af_stepsize = self.af_stepsize_spin.value()
+        self._tile_counter = 0
 
         try:
             self._port = int(self.main_gui.prior_port_entry.get().strip())
@@ -252,7 +288,7 @@ class MosaicDialog(QDialog):
 
         i, j, dx_um, dy_um, dx_px, dy_px = self._tile_order.pop(0)
         try:
-            move_xy(self._port, self._x0 + dx_um, self._y0 + dy_um)
+            move_xy(self._port, self._x0 + dx_um, self._y0 - dy_um)
         except Exception as e:
             self.update_status(f"Move failed: {e}")
             return
@@ -265,7 +301,22 @@ class MosaicDialog(QDialog):
             return
 
         self.blend_tile(i, j, dx_px, dy_px)
-        QTimer.singleShot(100, self.process_next_tile)
+        
+        if not self._simulate:
+            self._tile_counter += 1
+
+            if self._af_enabled and self._tile_counter % self._af_interval == 0:
+                task = AutofocusTask(
+                    self.main_gui,
+                    self._port,
+                    self._chan,
+                    step_size=self._af_stepsize,
+                    numsteps=self._af_numsteps,
+                    callback=self.process_next_tile
+                )
+                QThreadPool.globalInstance().start(task)
+        else:
+            QTimer.singleShot(100, self.process_next_tile)
 
     def blend_tile(self, i, j, dx, dy):
         data = getattr(self.main_gui, 'data', None)
@@ -274,8 +325,7 @@ class MosaicDialog(QDialog):
 
         if self.save_tiles_checkbox.isChecked():
             for ch, frame in enumerate(data):
-                vmin, vmax = np.min(frame), np.max(frame)
-                norm = (frame - vmin) / (vmax - vmin) if vmax > vmin else np.zeros_like(frame)
+                norm = frame.astype(np.float32)
                 img = Image.fromarray((norm * 255).astype(np.uint8))
                 img.save(os.path.join(self.tile_dir, f"tile_{i}_{j}_ch{ch}.tif"))
 
@@ -286,8 +336,7 @@ class MosaicDialog(QDialog):
 
         for ch, frame in enumerate(data):
             if ch < len(visibility) and visibility[ch]:
-                vmin, vmax = np.min(frame), np.max(frame)
-                norm = (frame - vmin) / (vmax - vmin) if vmax > vmin else np.zeros_like(frame)
+                norm = frame.astype(np.float32)
                 for c in range(3):
                     tile_rgb[..., c] += norm * (colors[ch][c] / 255.0)
 
@@ -304,7 +353,8 @@ class MosaicDialog(QDialog):
         self.update_display()
 
     def update_display(self):
-        rgb_uint8 = (np.clip(self.mosaic_rgb, 0, 1) * 255).astype(np.uint8)
+        max_val = np.max(self.mosaic_rgb)
+        rgb_uint8 = (self.mosaic_rgb / max_val * 255).astype(np.uint8) if max_val > 0 else np.zeros_like(self.mosaic_rgb, dtype=np.uint8)
         h, w, _ = rgb_uint8.shape
         image = QImage(rgb_uint8.data, w, h, QImage.Format_RGB888)
 
@@ -349,3 +399,23 @@ class MosaicDialog(QDialog):
             Image.fromarray(stitched_img).save(os.path.join(self.save_dir, "stitched_mosaic.tif"))
 
         self.update_status("Mosaic saved.")
+
+class AutofocusTask(QRunnable):
+    def __init__(self, gui, port, chan, step_size, numsteps, callback=None):
+        super().__init__()
+        self.gui = gui
+        self.port = port
+        self.chan = chan
+        self.step_size = step_size
+        self.numsteps = numsteps
+        self.callback = callback
+
+    @pyqtSlot()
+    def run(self):
+        try:
+            auto_focus(self.gui, self.port, self.chan, step_size=self.step_size, numsteps=self.numsteps)
+        except Exception as e:
+            print(f"[Autofocus Error] {e}")
+        finally:
+            if self.callback:
+                QTimer.singleShot(0, self.callback)
