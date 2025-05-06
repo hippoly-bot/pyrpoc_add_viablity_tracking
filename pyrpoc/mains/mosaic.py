@@ -132,8 +132,15 @@ class MosaicDialog(QDialog):
         self.pattern_combo = QComboBox(); self.pattern_combo.addItems(["Snake", "Raster"])
         self.fov_um_spin = QSpinBox(); self.fov_um_spin.setRange(1, 10000); self.fov_um_spin.setValue(100)
         self.grid_checkbox = QCheckBox("Show Tile Grid"); self.grid_checkbox.setChecked(True)
+        self.display_mosaic_checkbox = QCheckBox("Display Mosaic Live")
+        self.display_mosaic_checkbox.setChecked(True)
+        
+        
         self.grid_checkbox.stateChanged.connect(self.update_display)
+        self.rows_spin.valueChanged.connect(self.report_memory_estimate)
+        self.cols_spin.valueChanged.connect(self.report_memory_estimate)
 
+        
         params_layout.addWidget(QLabel("Rows:"), 0, 0)
         params_layout.addWidget(self.rows_spin, 0, 1)
         params_layout.addWidget(QLabel("Columns:"), 1, 0)
@@ -145,6 +152,7 @@ class MosaicDialog(QDialog):
         params_layout.addWidget(QLabel("FOV Size (μm):"), 4, 0)
         params_layout.addWidget(self.fov_um_spin, 4, 1)
         params_layout.addWidget(self.grid_checkbox, 5, 0, 1, 2)
+        params_layout.addWidget(self.display_mosaic_checkbox, 6, 0, 1, 2)
 
         self.start_button = QPushButton("Start Mosaic Imaging")
         self.start_button.setAutoDefault(False)
@@ -177,10 +185,23 @@ class MosaicDialog(QDialog):
         self.af_stepsize_spin.setValue(0.1)
         self.af_stepsize_spin.setSingleStep(0.1)
 
+        self.af_metric_label = QLabel("Focus Metric:")
+        self.af_metric_combo = QComboBox()
+        self.af_metric_combo.addItems([
+            "laplacian",
+            "tenengrad",
+            "brenner",
+            "entropy",
+            "sobel_variance",
+            "local_variance"
+        ])
+
         af_layout.addWidget(self.af_enabled_checkbox, 0, 0, 1, 2)
         af_layout.addWidget(self.af_every_n_label, 1, 0); af_layout.addWidget(self.af_every_n_spin, 1, 1)
         af_layout.addWidget(self.af_numsteps_label, 2, 0); af_layout.addWidget(self.af_numsteps_spin, 2, 1)
         af_layout.addWidget(self.af_stepsize_label, 3, 0); af_layout.addWidget(self.af_stepsize_spin, 3, 1)
+        af_layout.addWidget(self.af_metric_label, 4, 0)
+        af_layout.addWidget(self.af_metric_combo, 4, 1)
 
         self.sidebar_layout.addWidget(self.save_group)
         self.sidebar_layout.addWidget(params_group)
@@ -239,7 +260,10 @@ class MosaicDialog(QDialog):
         self._af_interval = self.af_every_n_spin.value()
         self._af_numsteps = self.af_numsteps_spin.value()
         self._af_stepsize = self.af_stepsize_spin.value()
+        self._af_method = self.af_metric_combo.currentText()
         self._tile_counter = 0
+        self._show_live_display = self.display_mosaic_checkbox.isChecked()
+        
 
         try:
             self._port = int(self.main_gui.prior_port_entry.get().strip())
@@ -260,7 +284,17 @@ class MosaicDialog(QDialog):
 
         mosaic_h = step_px * (self._rows - 1) + self._tile_h
         mosaic_w = step_px * (self._cols - 1) + self._tile_w
+
+        if not self._show_live_display:
+            self.preview_tile_px = 10  # each tile = 10×10 px square in preview
+            canvas_w = self._cols * self.preview_tile_px
+            canvas_h = self._rows * self.preview_tile_px
+            self.blank_canvas = QImage(canvas_w, canvas_h, QImage.Format_RGB888)
+            self.blank_canvas.fill(Qt.black)
+        
         self.mosaic_rgb = np.zeros((mosaic_h, mosaic_w, 3), dtype=np.float32)
+        self.mosaic_weight = np.zeros((mosaic_h, mosaic_w), dtype=np.float32)
+
 
         self._tile_order = []
         self._tile_colors = {}
@@ -316,7 +350,8 @@ class MosaicDialog(QDialog):
                 self._port,
                 self._chan,
                 step_size=self._af_stepsize,
-                numsteps=self._af_numsteps
+                numsteps=self._af_numsteps,
+                method=self._af_method
             )
             worker.finished.connect(after_focus)
             worker.error.connect(lambda msg: self.update_status(f"Autofocus error: {msg}"))
@@ -330,40 +365,67 @@ class MosaicDialog(QDialog):
 
         if self.save_tiles_checkbox.isChecked():
             for ch, frame in enumerate(data):
-                norm = frame.astype(np.float32)
-                img = Image.fromarray((norm * 255).astype(np.uint8))
+                img = Image.fromarray(frame)
                 img.save(os.path.join(self.tile_dir, f"tile_{i}_{j}_ch{ch}.tif"))
 
-        visibility = getattr(self.main_gui, 'image_visibility', [True] * len(data))
-        colors = getattr(self.main_gui, 'image_colors', [(255, 0, 0), (0, 255, 0), (0, 0, 255)])
+        if self._show_live_display:
+            visibility = getattr(self.main_gui, 'image_visibility', [True] * len(data))
+            colors = getattr(self.main_gui, 'image_colors', [(255, 0, 0), (0, 255, 0), (0, 0, 255)])
 
-        tile_rgb = np.zeros((self._tile_h, self._tile_w, 3), dtype=np.float32)
+            tile_rgb = np.zeros((self._tile_h, self._tile_w, 3), dtype=np.float32)
 
-        for ch, frame in enumerate(data):
-            if ch < len(visibility) and visibility[ch]:
-                norm = frame.astype(np.float32)
-                for c in range(3):
-                    tile_rgb[..., c] += norm * (colors[ch][c] / 255.0)
+            for ch, frame in enumerate(data):
+                if ch < len(visibility) and visibility[ch]:
+                    norm = frame.astype(np.float32)
+                    for c in range(3):
+                        tile_rgb[..., c] += norm * (colors[ch][c] / 255.0)
 
-        tile_rgb = np.clip(tile_rgb, 0, 1)
+            tile_rgb = np.clip(tile_rgb, 0, 1)
 
-        y1, y2 = dy, dy + self._tile_h
-        x1, x2 = dx, dx + self._tile_w
+            y1, y2 = dy, dy + self._tile_h
+            x1, x2 = dx, dx + self._tile_w
 
-        if y2 > self.mosaic_rgb.shape[0] or x2 > self.mosaic_rgb.shape[1]:
-            print(f"Tile ({i},{j}) exceeds mosaic bounds.")
-            return
+            if y2 > self.mosaic_rgb.shape[0] or x2 > self.mosaic_rgb.shape[1]:
+                print(f"Tile ({i},{j}) exceeds mosaic bounds.")
+                return
 
-        self.mosaic_rgb[y1:y2, x1:x2] = (self.mosaic_rgb[y1:y2, x1:x2] + tile_rgb) / 2.0
-        self.update_display()
+            self.mosaic_rgb[y1:y2, x1:x2] += tile_rgb
+            self.mosaic_weight[y1:y2, x1:x2] += 1.0
+            self.update_display()
+        else:
+            self.latest_tile_data = data
+            self.update_display()
+            
 
     def update_display(self):
-        max_val = np.max(self.mosaic_rgb)
-        rgb_uint8 = (self.mosaic_rgb / max_val * 255).astype(np.uint8) if max_val > 0 else np.zeros_like(self.mosaic_rgb, dtype=np.uint8)
-        h, w, _ = rgb_uint8.shape
-        image = QImage(rgb_uint8.data, w, h, QImage.Format_RGB888)
+        if self._show_live_display:
+            weight_safe = np.maximum(self.mosaic_weight[..., np.newaxis], 1.0)
+            normalized_rgb = self.mosaic_rgb / weight_safe
+            rgb_uint8 = np.clip(normalized_rgb * 255, 0, 255).astype(np.uint8)
+            h, w, _ = rgb_uint8.shape
+            image = QImage(rgb_uint8.data, w, h, QImage.Format_RGB888)
+        else:
+            data = getattr(self, 'latest_tile_data', None)
+            if not data or not isinstance(data, (list, tuple)) or len(data) == 0:
+                return
 
-        if self.grid_checkbox.isChecked():
+            visibility = getattr(self.main_gui, 'image_visibility', [True] * len(data))
+            colors = getattr(self.main_gui, 'image_colors', [(255, 0, 0), (0, 255, 0), (0, 0, 255)])
+
+            tile_h, tile_w = data[0].shape
+            tile_rgb = np.zeros((tile_h, tile_w, 3), dtype=np.float32)
+
+            for ch, frame in enumerate(data):
+                if ch < len(visibility) and visibility[ch]:
+                    norm = frame.astype(np.float32)
+                    for c in range(3):
+                        tile_rgb[..., c] += norm * (colors[ch][c] / 255.0)
+
+            tile_rgb = np.clip(tile_rgb, 0, 1)
+            rgb_uint8 = (tile_rgb * 255).astype(np.uint8)
+            image = QImage(rgb_uint8.data, tile_w, tile_h, QImage.Format_RGB888)
+
+        if self.grid_checkbox.isChecked() and self._show_live_display:
             painter = QPainter(image)
             for (i, j), color in self._tile_colors.items():
                 step_px = int(self._tile_w * (1 - self._overlap))
@@ -400,10 +462,33 @@ class MosaicDialog(QDialog):
                 json.dump(metadata, f, indent=2)
 
         if self.save_stitched_checkbox.isChecked():
-            stitched_img = (np.clip(self.mosaic_rgb, 0, 1) * 255).astype(np.uint8)
+            weight_safe = np.maximum(self.mosaic_weight[..., np.newaxis], 1.0)
+            normalized_rgb = self.mosaic_rgb / weight_safe
+            stitched_img = np.clip(normalized_rgb * 255, 0, 255).astype(np.uint8)
             Image.fromarray(stitched_img).save(os.path.join(self.save_dir, "stitched_mosaic.tif"))
 
         self.update_status("Mosaic saved.")
+
+    def report_memory_estimate(self):
+        try:
+            tile_w, tile_h = self.main_gui.config['numsteps_x'], self.main_gui.config['numsteps_y']  
+            
+            rows = self.rows_spin.value()
+            cols = self.cols_spin.value()
+
+            mosaic_h = tile_h + (rows - 1) * int(tile_h * (1 - self.overlap_spin.value() / 100.0))
+            mosaic_w = tile_w + (cols - 1) * int(tile_w * (1 - self.overlap_spin.value() / 100.0))
+
+            bytes_needed = mosaic_h * mosaic_w * 3 * 4  # float32 RGB
+            approx_gb = bytes_needed / (1024**3)
+
+            if approx_gb > 0.2:
+                self.update_status(f"WARNING: expected memory usage is {approx_gb:.2f} GB. The program will probably crash.")
+            else:
+                self.update_status(f"Expected memory usage: {approx_gb:.2f} GB")
+
+        except Exception as e:
+            self.update_status(f"Memory estimate failed: {e}")
 
 class AutofocusTask(QRunnable):
     def __init__(self, worker):
@@ -417,20 +502,22 @@ class AutofocusWorker(QObject):
     finished = pyqtSignal()
     error = pyqtSignal(str)
 
-    def __init__(self, gui, port, chan, step_size, numsteps):
+    def __init__(self, gui, port, chan, step_size, numsteps, method='laplacian'):
         super().__init__()
         self.gui = gui
         self.port = port
         self.chan = chan
         self.step_size = step_size
         self.numsteps = numsteps
+        self.method = method
 
     @pyqtSlot()
     def run(self):
         try:
             auto_focus(self.gui, self.port, self.chan,
-                       step_size=self.step_size,
-                       numsteps=self.numsteps)
+                       step_size=int(10*self.step_size), # 100s of nms
+                       numsteps=self.numsteps,
+                       method=self.method)
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))

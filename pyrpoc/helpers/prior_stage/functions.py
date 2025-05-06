@@ -4,6 +4,7 @@ import time
 import numpy as np
 from pyrpoc.mains import acquisition
 import cv2
+from skimage.measure import shannon_entropy
 
 DLL_PATH = os.path.join(os.path.dirname(__file__), "PriorScientificSDK.dll")
 SDKPrior = None
@@ -78,7 +79,7 @@ def wait_for_z_motion():
 
         time.sleep(0.1)
 
-def auto_focus(gui, port: int, channel_name: str, step_size=10, numsteps=21):
+def auto_focus(gui, port: int, channel_name: str, step_size=10, numsteps=21, method='tenengrad'):
     connect_prior(port)
 
     gui.simulation_mode.set(False)
@@ -120,10 +121,37 @@ def auto_focus(gui, port: int, channel_name: str, step_size=10, numsteps=21):
         gui.root.update_idletasks()
         gui.root.update()
 
+        print(np.mean(gui.data))
         image = gui.data[channel_index]
+        print(np.mean(image))
         x, y = np.shape(image)
-        metric = cv2.Laplacian(image[int(3*x/8):int(5*x/8), int(3*y/8):int(5*y/8)], cv2.CV_64F).var() # only use the middle eighth for focus
-        print(f"Z={z} → Focus Metric={metric:.2f}")
+
+        gray = (image * 255).clip(0, 255).astype(np.uint8)
+    
+        if method == 'tenengrad':
+            print("Image min/max:", gray.min(), gray.max(), "dtype:", gray.dtype)
+            sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+            sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+            metric = np.mean(np.sqrt(sobelx**2 + sobely**2))
+        elif method == 'brenner':
+            shifted = np.roll(gray, -2, axis=0)
+            metric = np.sum((gray - shifted)**2)
+        elif method == 'entropy':
+            metric = shannon_entropy(gray)
+        elif method == 'sobel_variance':
+            sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+            sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+            sobel_magnitude = np.sqrt(sobelx**2 + sobely**2)
+            metric = np.mean(sobel_magnitude) + np.var(gray)
+        elif method == 'local_variance':
+            mean = cv2.blur(gray.astype(np.float32), (5, 5))
+            squared_mean = cv2.blur((gray.astype(np.float32))**2, (5, 5))
+            variance = squared_mean - mean**2
+            metric = np.mean(variance)
+        else:
+            metric = cv2.Laplacian(gray, cv2.CV_64F).var() 
+         
+        print(f"Z={z} → {method}={metric}")
 
         if metric > best_focus:
             best_focus = metric
