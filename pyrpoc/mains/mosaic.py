@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QLineEdit, QDoubleSpinBox
 )
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
-from PyQt5.QtCore import Qt, QTimer, QRunnable, QThreadPool, pyqtSlot
+from PyQt5.QtCore import Qt, QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot
 from pyrpoc.mains import acquisition
 from pyrpoc.helpers.prior_stage.functions import *
 import numpy as np
@@ -287,30 +287,41 @@ class MosaicDialog(QDialog):
             return
 
         i, j, dx_um, dy_um, dx_px, dy_px = self._tile_order.pop(0)
+
         try:
             move_xy(self._port, self._x0 + dx_um, self._y0 - dy_um)
         except Exception as e:
             self.update_status(f"Move failed: {e}")
             return
-        
-        if not self._simulate:
-            try: 
-                self.update_status(f"Autofocusing tile ({i+1}, {j+1})...")
-                task = AutofocusTask(self.main_gui, self._port, self._chan, callback=acquisition.acquire(self.main_gui, auxilary=True))
-                
-                self.update_status(f"Acquiring tile ({i+1}, {j+1})...")
-                QThreadPool.globalInstance().start(task)
-            except Exception as e:
-                self.update_status(f'Acquisition failed: {e}') 
-        else:
-            self.update_status(f"Acquiring tile ({i+1}, {j+1})...")
-            try: 
-                acquisition.acquire(self.main_gui, auxilary=True)
-            except Exception as e:
-                self.update_status(f'Acquisition failed: {e}')
 
-        self.blend_tile(i, j, dx_px, dy_px)
-        QTimer.singleShot(100, self.process_next_tile)
+        def after_focus():
+            self.update_status(f"Acquiring tile ({i+1}, {j+1})...")
+            try:
+                acquisition.acquire(self.main_gui, auxilary=True)
+                self.blend_tile(i, j, dx_px, dy_px)
+            except Exception as e:
+                self.update_status(f"Acquisition failed: {e}")
+                return
+
+            self._tile_counter += 1
+            QTimer.singleShot(100, self.process_next_tile)
+
+        if self._simulate or not self._af_enabled or (self._tile_counter % self._af_interval != 0):
+            # No autofocus this tile
+            after_focus()
+        else:
+            self.update_status(f"Autofocusing tile ({i+1}, {j+1})...")
+            worker = AutofocusWorker(
+                self.main_gui,
+                self._port,
+                self._chan,
+                step_size=self._af_stepsize,
+                numsteps=self._af_numsteps
+            )
+            worker.finished.connect(after_focus)
+            worker.error.connect(lambda msg: self.update_status(f"Autofocus error: {msg}"))
+            task = AutofocusTask(worker)
+            QThreadPool.globalInstance().start(task)
 
     def blend_tile(self, i, j, dx, dy):
         data = getattr(self.main_gui, 'data', None)
@@ -395,19 +406,31 @@ class MosaicDialog(QDialog):
         self.update_status("Mosaic saved.")
 
 class AutofocusTask(QRunnable):
-    def __init__(self, gui, port, chan, callback=None):
+    def __init__(self, worker):
+        super().__init__()
+        self.worker = worker
+
+    def run(self):
+        self.worker.run()  # this will emit signals when done
+
+class AutofocusWorker(QObject):
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
+
+    def __init__(self, gui, port, chan, step_size, numsteps):
         super().__init__()
         self.gui = gui
         self.port = port
         self.chan = chan
-        self.callback = callback
+        self.step_size = step_size
+        self.numsteps = numsteps
 
     @pyqtSlot()
     def run(self):
         try:
-            auto_focus(self.gui, self.port, self.chan, step_size=0.2, numsteps=5)
+            auto_focus(self.gui, self.port, self.chan,
+                       step_size=self.step_size,
+                       numsteps=self.numsteps)
+            self.finished.emit()
         except Exception as e:
-            print(f"[Autofocus Error] {e}")
-        finally:
-            if self.callback:
-                QTimer.singleShot(0, self.callback)
+            self.error.emit(str(e))
