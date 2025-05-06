@@ -292,21 +292,25 @@ class MosaicDialog(QDialog):
         except Exception as e:
             self.update_status(f"Move failed: {e}")
             return
-
-        self.update_status(f"Acquiring tile ({i+1}, {j+1})...")
-        try:
-            acquisition.acquire(self.main_gui, auxilary=True)
-        except Exception as e:
-            self.update_status(f"Acquisition failed: {e}")
-            return
-
-        self.blend_tile(i, j, dx_px, dy_px)
         
         if not self._simulate:
-            task = AutofocusTask(self.main_gui, self._port, self._chan, callback=self.process_next_tile)
-            QThreadPool.globalInstance().start(task)
+            try: 
+                self.update_status(f"Autofocusing tile ({i+1}, {j+1})...")
+                task = AutofocusTask(self.main_gui, self._port, self._chan, callback=acquisition.acquire(self.main_gui, auxilary=True))
+                
+                self.update_status(f"Acquiring tile ({i+1}, {j+1})...")
+                QThreadPool.globalInstance().start(task)
+            except Exception as e:
+                self.update_status(f'Acquisition failed: {e}') 
         else:
-            QTimer.singleShot(100, self.process_next_tile)
+            self.update_status(f"Acquiring tile ({i+1}, {j+1})...")
+            try: 
+                acquisition.acquire(self.main_gui, auxilary=True)
+            except Exception as e:
+                self.update_status(f'Acquisition failed: {e}')
+
+        self.blend_tile(i, j, dx_px, dy_px)
+        QTimer.singleShot(100, self.process_next_tile)
 
     def blend_tile(self, i, j, dx, dy):
         data = getattr(self.main_gui, 'data', None)
