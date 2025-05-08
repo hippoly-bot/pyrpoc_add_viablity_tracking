@@ -1,8 +1,4 @@
-import nidaqmx
-from nidaqmx.constants import AcquisitionType
 import numpy as np
-from PIL import Image
-from tkinter import messagebox
 
 class Galvo:
     def __init__(self, config, rpoc_mask=None, rpoc_do_chan=None, rpoc_mode=None, dwell_multiplier=2.0, **kwargs):
