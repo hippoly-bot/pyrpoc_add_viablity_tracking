@@ -16,7 +16,7 @@ def reset_gui(gui):
     gui.stop_button['state'] = 'disabled'
     gui.progress_label.config(text='(0/0)')
 
-def acquire(gui, continuous=False, startup=False, auxilary=False):
+def acquire(gui, continuous=False, startup=False, auxilary=False, force_no_mask=False):
     if (gui.running or gui.acquiring) and not (startup or auxilary):
         return
 
@@ -94,7 +94,7 @@ def acquire(gui, continuous=False, startup=False, auxilary=False):
                     prior.move_z(port, int(positions[i]))
 
                 galvo = Galvo(gui.config)
-                data = acquire_single(gui, channels, galvo)
+                data = acquire_single(gui, channels, galvo, force_no_mask=force_no_mask)
                 if data is None:
                     break
 
@@ -116,7 +116,7 @@ def acquire(gui, continuous=False, startup=False, auxilary=False):
             reset_gui(gui)
 
 
-def acquire_single(gui, channels, galvo, move_z=None):
+def acquire_single(gui, channels, galvo, move_z=None, force_no_mask=False):
     if move_z is not None:
         try:
             gui.zaber_stage.move_absolute_um(move_z)
@@ -130,11 +130,15 @@ def acquire_single(gui, channels, galvo, move_z=None):
             data_list = generate_data(len(channels), config=gui.config)
             gui.root.after(0, display_data, gui, data_list)
             return [convert(d) for d in data_list]
+        
+
     
         use_dynamic_mask = hasattr(gui, 'mod_scripts') and any(
             gui.mod_enabled_vars[i].get() and i in gui.mod_scripts
             for i in range(len(gui.mod_enabled_vars))
         )
+        if force_no_mask: 
+            use_dynamic_mask = False
         mod_do_chans = []
         mod_masks = []
 
@@ -166,7 +170,7 @@ def acquire_single(gui, channels, galvo, move_z=None):
                     mod_do_chans.append(ttl_var)
                     mod_masks.append(gui.mod_masks[i])
 
-        else:
+        elif not force_no_mask: # TODO: check if this is weird
             if hasattr(gui, 'mod_enabled_vars') and hasattr(gui, 'mod_masks'):
                 for i, enabled_var in enumerate(gui.mod_enabled_vars):
                     if enabled_var.get() and i in gui.mod_masks:

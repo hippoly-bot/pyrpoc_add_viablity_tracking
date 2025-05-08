@@ -117,7 +117,7 @@ def auto_focus(gui, port: int, channel_name: str, step_size=10, numsteps=21, met
             gui.acquiring = False
             raise RuntimeError(f"Stage move to Z={z} failed: {e}")
 
-        acquisition.acquire(gui, auxilary=True)
+        acquisition.acquire(gui, auxilary=True, force_no_mask=True)
         gui.root.update_idletasks()
         gui.root.update()
 
