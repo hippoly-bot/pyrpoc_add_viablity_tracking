@@ -185,23 +185,10 @@ class MosaicDialog(QDialog):
         self.af_stepsize_spin.setValue(0.1)
         self.af_stepsize_spin.setSingleStep(0.1)
 
-        self.af_metric_label = QLabel("Focus Metric:")
-        self.af_metric_combo = QComboBox()
-        self.af_metric_combo.addItems([
-            "laplacian",
-            "tenengrad",
-            "brenner",
-            "entropy",
-            "sobel_variance",
-            "local_variance"
-        ])
-
         af_layout.addWidget(self.af_enabled_checkbox, 0, 0, 1, 2)
         af_layout.addWidget(self.af_every_n_label, 1, 0); af_layout.addWidget(self.af_every_n_spin, 1, 1)
         af_layout.addWidget(self.af_numsteps_label, 2, 0); af_layout.addWidget(self.af_numsteps_spin, 2, 1)
         af_layout.addWidget(self.af_stepsize_label, 3, 0); af_layout.addWidget(self.af_stepsize_spin, 3, 1)
-        af_layout.addWidget(self.af_metric_label, 4, 0)
-        af_layout.addWidget(self.af_metric_combo, 4, 1)
 
         self.sidebar_layout.addWidget(self.save_group)
         self.sidebar_layout.addWidget(params_group)
@@ -260,7 +247,6 @@ class MosaicDialog(QDialog):
         self._af_interval = self.af_every_n_spin.value()
         self._af_numsteps = self.af_numsteps_spin.value()
         self._af_stepsize = self.af_stepsize_spin.value()
-        self._af_method = self.af_metric_combo.currentText()
         self._tile_counter = 0
         self._show_live_display = self.display_mosaic_checkbox.isChecked()
         
@@ -351,7 +337,6 @@ class MosaicDialog(QDialog):
                 self._chan,
                 step_size=self._af_stepsize,
                 numsteps=self._af_numsteps,
-                method=self._af_method
             )
             worker.finished.connect(after_focus)
             worker.error.connect(lambda msg: self.update_status(f"Autofocus error: {msg}"))
@@ -502,22 +487,20 @@ class AutofocusWorker(QObject):
     finished = pyqtSignal()
     error = pyqtSignal(str)
 
-    def __init__(self, gui, port, chan, step_size, numsteps, method='laplacian'):
+    def __init__(self, gui, port, chan, step_size, numsteps):
         super().__init__()
         self.gui = gui
         self.port = port
         self.chan = chan
         self.step_size = step_size
         self.numsteps = numsteps
-        self.method = method
 
     @pyqtSlot()
     def run(self):
         try:
             auto_focus(self.gui, self.port, self.chan,
                        step_size=int(10*self.step_size), # 100s of nms
-                       numsteps=self.numsteps,
-                       method=self.method)
+                       numsteps=self.numsteps)
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))

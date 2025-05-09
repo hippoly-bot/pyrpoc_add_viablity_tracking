@@ -79,9 +79,8 @@ def wait_for_z_motion():
 
         time.sleep(0.1)
 
-def auto_focus(gui, port: int, channel_name: str, step_size=10, numsteps=21, method='tenengrad'):
+def auto_focus(gui, port: int, channel_name: str, step_size=5, max_steps=20, min_improvement=5.0, min_start_metric=50.0):
     connect_prior(port)
-
     gui.simulation_mode.set(False)
     gui.acquiring = True
 
@@ -98,80 +97,58 @@ def auto_focus(gui, port: int, channel_name: str, step_size=10, numsteps=21, met
     except ValueError:
         raise RuntimeError(f"Invalid Z position response: '{current_z}'")
 
-    z_positions = [current_z + i * step_size for i in range(0 - int(numsteps/2), 0 + int(numsteps/2))]  # total of 21 points
-    best_focus = -1
-    best_z = current_z
-
-    gui.progress_label.config(text=f'(0/{len(z_positions)})')
-    gui.root.update_idletasks()
-
-    for i, z in enumerate(z_positions):
-        if not gui.acquiring:
-            print("[Autofocus] Interrupted by Stop.")
-            break
-
-        try:
-            send_command(f"controller.z.goto-position {z}")
-            wait_for_z_motion()
-        except Exception as e:
-            gui.acquiring = False
-            raise RuntimeError(f"Stage move to Z={z} failed: {e}")
-
-        acquisition.acquire(gui, auxilary=True, force_no_mask=True)
-        gui.root.update_idletasks()
-        gui.root.update()
-
-        print(np.mean(gui.data))
-        image = gui.data[channel_index]
-        print(np.mean(image))
-        x, y = np.shape(image)
-
-        gray = (image * 255).clip(0, 255).astype(np.uint8)
-    
-        if method == 'tenengrad':
-            print("Image min/max:", gray.min(), gray.max(), "dtype:", gray.dtype)
-            sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
-            sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
-            metric = np.mean(np.sqrt(sobelx**2 + sobely**2))
-        elif method == 'brenner':
-            shifted = np.roll(gray, -2, axis=0)
-            metric = np.sum((gray - shifted)**2)
-        elif method == 'entropy':
-            metric = shannon_entropy(gray)
-        elif method == 'sobel_variance':
-            sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
-            sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
-            sobel_magnitude = np.sqrt(sobelx**2 + sobely**2)
-            metric = np.mean(sobel_magnitude) + np.var(gray)
-        elif method == 'local_variance':
-            mean = cv2.blur(gray.astype(np.float32), (5, 5))
-            squared_mean = cv2.blur((gray.astype(np.float32))**2, (5, 5))
-            variance = squared_mean - mean**2
-            metric = np.mean(variance)
-        else:
-            metric = cv2.Laplacian(gray, cv2.CV_64F).var() 
-         
-        print(f"Z={z} → {method}={metric}")
-
-        if metric > best_focus:
-            best_focus = metric
-            best_z = z
-
-        gui.progress_label.config(text=f'({i + 1}/{len(z_positions)})')
-        gui.root.update_idletasks()
-
-    if gui.acquiring:
-        send_command(f"controller.z.goto-position {best_z}")
+    def evaluate_tenengrad(z):
+        send_command(f"controller.z.goto-position {z}")
         wait_for_z_motion()
-        print(f'moved to {best_z}')
+        acquisition.acquire(gui, auxilary=True, force_no_mask=True)
+        image = gui.data[channel_index]
+        gray = (image * 255).clip(0, 255).astype(np.uint8)
+        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+        sobely = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+        return np.mean(np.sqrt(sobelx**2 + sobely**2))
 
-        acquisition.acquire(gui, auxilary=True)
-        gui.root.update_idletasks()
-        gui.root.update()
-        print(f"[Autofocus] Best Z = {best_z}, Metric = {best_focus:.2f}")
+    best_z = current_z
+    best_metric = evaluate_tenengrad(current_z)
+    print(f"[Autofocus] Start Z={current_z}, tenengrad={best_metric:.2f}")
+
+    if best_metric < min_start_metric:
+        print("[Autofocus] Initial focus metric too low — aborting autofocus.")
+        gui.acquiring = False
+        return current_z, best_metric
+
+    direction = +1
+    steps = 0
+
+    while steps < max_steps:
+        trial_z = best_z + direction * step_size
+        trial_metric = evaluate_tenengrad(trial_z)
+        print(f"[Autofocus] Z={trial_z}, Tenengrad={trial_metric:.2f}")
+
+        improvement = trial_metric - best_metric
+
+        if improvement > min_improvement:
+            best_z = trial_z
+            best_metric = trial_metric
+            steps += 1
+        else:
+            if direction == +1:
+                direction = -1  # try going the other way
+            else:
+                break  # both directions exhausted
+            steps += 1
+
+    if best_z != current_z and best_metric - best_metric < min_improvement:
+        print("[Autofocus] Final improvement too small — staying at original Z.")
+        best_z = current_z
+
+    send_command(f"controller.z.goto-position {best_z}")
+    wait_for_z_motion()
+    acquisition.acquire(gui, auxilary=True)
 
     gui.acquiring = False
-    return best_z, best_focus
+    print(f"[Autofocus] Final Z = {best_z}, Tenengrad = {best_metric:.2f}")
+    return best_z, best_metric
+
 
 
 def estimate_fov(gui, port: int, channel_name: str, step_um: int = 5, iterations: int = 5) -> float:
