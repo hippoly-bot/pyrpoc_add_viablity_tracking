@@ -31,7 +31,7 @@ def stitch(base_dir, channel=0, threshold=230, output_filename="stitched_mosaic.
 
         tile = np.array(Image.open(tile_path)).astype(np.float32)
 
-        tile[tile > threshold] = 0.0
+        # tile[tile > threshold] = 0.0
 
         y1, x1 = i * step_h, j * step_w
         y2, x2 = y1 + tile_h, x1 + tile_w
@@ -50,4 +50,4 @@ def stitch(base_dir, channel=0, threshold=230, output_filename="stitched_mosaic.
 
     Image.fromarray(stitched_img).save(os.path.join(base_dir, output_filename))
 
-stitch(r"C:\Users\Lab Admin\Box\(L2 Sensitive) zhan2017\Zhang lab data\Ishaan\5-06-2025_mosaic2", channel=0)
+stitch(r"C:\Users\Lab Admin\Box\(L2 Sensitive) zhan2017\Zhang lab data\Ishaan\seohee 1", channel=0)
