@@ -129,6 +129,7 @@ class MosaicDialog(QDialog):
         self.rows_spin = QSpinBox(); self.rows_spin.setRange(1, 100); self.rows_spin.setValue(3)
         self.cols_spin = QSpinBox(); self.cols_spin.setRange(1, 100); self.cols_spin.setValue(3)
         self.overlap_spin = QSpinBox(); self.overlap_spin.setRange(0, 100); self.overlap_spin.setValue(10)
+        self.repetitions_spin = QSpinBox(); self.repetitions_spin.setRange(1, 100); self.repetitions_spin.setValue(1)
         self.pattern_combo = QComboBox(); self.pattern_combo.addItems(["Snake", "Raster"])
         self.fov_um_spin = QSpinBox(); self.fov_um_spin.setRange(1, 10000); self.fov_um_spin.setValue(100)
         self.grid_checkbox = QCheckBox("Show Tile Grid"); self.grid_checkbox.setChecked(True)
@@ -147,12 +148,14 @@ class MosaicDialog(QDialog):
         params_layout.addWidget(self.cols_spin, 1, 1)
         params_layout.addWidget(QLabel("Overlap (%):"), 2, 0)
         params_layout.addWidget(self.overlap_spin, 2, 1)
-        params_layout.addWidget(QLabel("Pattern:"), 3, 0)
-        params_layout.addWidget(self.pattern_combo, 3, 1)
-        params_layout.addWidget(QLabel("FOV Size (μm):"), 4, 0)
-        params_layout.addWidget(self.fov_um_spin, 4, 1)
-        params_layout.addWidget(self.grid_checkbox, 5, 0, 1, 2)
-        params_layout.addWidget(self.display_mosaic_checkbox, 6, 0, 1, 2)
+        params_layout.addWidget(QLabel('Repetitions per Tile'), 3, 0)
+        params_layout.addWidget(self.overlap_spin, 3, 1)
+        params_layout.addWidget(QLabel("Pattern:"), 4, 0)
+        params_layout.addWidget(self.pattern_combo, 4, 1)
+        params_layout.addWidget(QLabel("FOV Size (μm):"), 5, 0)
+        params_layout.addWidget(self.fov_um_spin, 5, 1)
+        params_layout.addWidget(self.grid_checkbox, 6, 0, 1, 2)
+        params_layout.addWidget(self.display_mosaic_checkbox, 7, 0, 1, 2)
 
         self.start_button = QPushButton("Start Mosaic Imaging")
         self.start_button.setAutoDefault(False)
@@ -241,6 +244,7 @@ class MosaicDialog(QDialog):
         self._rows = self.rows_spin.value()
         self._cols = self.cols_spin.value()
         self._overlap = self.overlap_spin.value() / 100.0
+        self._repetitions = self.repetitions_spin.value()
         self._pattern = self.pattern_combo.currentText()
         self._fov_um = self.fov_um_spin.value()
         self._af_enabled = self.af_enabled_checkbox.isChecked()
@@ -340,7 +344,7 @@ class MosaicDialog(QDialog):
             )
             worker.finished.connect(after_focus)
             worker.error.connect(lambda msg: self.update_status(f"Autofocus error: {msg}"))
-            task = AutofocusTask(worker)
+            task = ThreadedTask(worker)
             QThreadPool.globalInstance().start(task)
 
     def blend_tile(self, i, j, dx, dy):
@@ -475,7 +479,7 @@ class MosaicDialog(QDialog):
         except Exception as e:
             self.update_status(f"Memory estimate failed: {e}")
 
-class AutofocusTask(QRunnable):
+class ThreadedTask(QRunnable):
     def __init__(self, worker):
         super().__init__()
         self.worker = worker
@@ -501,6 +505,34 @@ class AutofocusWorker(QObject):
             auto_focus(self.gui, self.port, self.chan,
                        step_size=int(10*self.step_size), # 100s of nms
                        numsteps=self.numsteps)
+            self.finished.emit()
+        except Exception as e:
+            self.error.emit(str(e))
+
+class AcquisitionWorker(QObject):
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
+    result = pyqtSignal(list)
+
+    def __init__(self, gui, repetitions=1, delay_ms=0):
+        super().__init__()
+        self.gui = gui
+        self.repetitions = repetitions
+        self.delay_ms = delay_ms
+
+    @pyqtSlot()
+    def run(self):
+        from time import sleep
+        results = []
+        try:
+            for _ in range(self.repetitions):
+                acquisition.acquire(self.gui, auxilary=True)
+                data = getattr(self.gui, 'data', None)
+                if data:
+                    results.append(data)
+                if self.delay_ms > 0:
+                    sleep(self.delay_ms / 1000.0)
+            self.result.emit(results)
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
