@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout, QLineEdit, QDoubleSpinBox
 )
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
-from PyQt5.QtCore import Qt, QTimer, QRunnable, QThreadPool, QObject, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import Qt, QTimer, QRunnable, QThread, QThreadPool, QObject, pyqtSignal, pyqtSlot
 from pyrpoc.mains import acquisition
 from pyrpoc.helpers.prior_stage.functions import *
 import numpy as np
@@ -240,8 +240,6 @@ class MosaicDialog(QDialog):
             os.makedirs(self.tile_dir, exist_ok=True)
 
         self.cancelled = False
-        self._chan = self.main_gui.config["channel_names"][0]
-        self._simulate = self.main_gui.simulation_mode.get()
         self._rows = self.rows_spin.value()
         self._cols = self.cols_spin.value()
         self._overlap = self.overlap_spin.value() / 100.0
@@ -251,291 +249,158 @@ class MosaicDialog(QDialog):
         self._af_enabled = self.af_enabled_checkbox.isChecked()
         self._af_interval = self.af_every_n_spin.value()
         self._af_max_steps = self.af_max_steps_spin.value()
-        self._af_stepsize = self.af_stepsize_spin.value()
-        self._tile_counter = 0
-        self._show_live_display = self.display_mosaic_checkbox.isChecked()
-        
+        self._af_stepsize = int(10 * self.af_stepsize_spin.value())
+        self._simulate = self.main_gui.simulation_mode.get()
+        self._chan = self.main_gui.config["channel_names"][0]
 
+        # Initial stage position
         try:
-            self._port = int(self.main_gui.prior_port_entry.get().strip())
-            self._x0, self._y0 = get_xy(self._port)
+            port = int(self.main_gui.prior_port_entry.text().strip())
+            x0, y0 = get_xy(port)
+            self._port, self._x0, self._y0 = port, x0, y0
         except Exception as e:
             self.update_status(f"Stage error: {e}")
             return
 
-        for _ in range(self._tile_repetitions):
-            acquisition.acquire(self.main_gui, auxilary=True)
+        # Use config to get tile dimensions instead of an initial acquisition
+        self.tile_w = self.main_gui.config.get('numsteps_x')
+        self.tile_h = self.main_gui.config.get('numsteps_y')
+        self.step_px = int(self.tile_w * (1 - self._overlap))
+        self.step_um = int(self._fov_um * (1 - self._overlap))
 
-        data = getattr(self.main_gui, 'data', None)
-        if not data or not isinstance(data, (list, tuple)) or len(data) == 0:
-            self.update_status("Acquisition failed.")
-            return
-
-        self._tile_h, self._tile_w = data[0].shape
-        step_px = int(self._tile_w * (1 - self._overlap))
-        step_um = int(self._fov_um * (1 - self._overlap))
-
-        mosaic_h = step_px * (self._rows - 1) + self._tile_h
-        mosaic_w = step_px * (self._cols - 1) + self._tile_w
-
-        if not self._show_live_display:
-            self.preview_tile_px = 10  # each tile = 10×10 px square in preview
-            canvas_w = self._cols * self.preview_tile_px
-            canvas_h = self._rows * self.preview_tile_px
-            self.blank_canvas = QImage(canvas_w, canvas_h, QImage.Format_RGB888)
-            self.blank_canvas.fill(Qt.black)
-        
-        self.mosaic_rgb = np.zeros((mosaic_h, mosaic_w, 3), dtype=np.float32)
-        self.mosaic_weight = np.zeros((mosaic_h, mosaic_w), dtype=np.float32)
-
-
+        # Build tile order & colors
         self._tile_order = []
         self._tile_colors = {}
         for i in range(self._rows):
-            col_range = range(self._cols) if (i % 2 == 0 or self._pattern == "Raster") else reversed(range(self._cols))
-            for j in col_range:
-                dx_um = int(j * step_um)
-                dy_um = int(i * step_um)
-                dx_px = int(j * step_px)
-                dy_px = int(i * step_px)
+            cols = range(self._cols) if (i % 2 == 0 or self._pattern == "Raster") else reversed(range(self._cols))
+            for j in cols:
+                dx_px = j * self.step_px
+                dy_px = i * self.step_px
+                dx_um = j * self.step_um
+                dy_um = i * self.step_um
                 self._tile_order.append((i, j, dx_um, dy_um, dx_px, dy_px))
-                self._tile_colors[(i, j)] = QColor(*[random.randint(180, 255) for _ in range(3)], 220)
+                self._tile_colors[(i, j)] = QColor(*[random.randint(180,255) for _ in range(3)], 220)
 
+        # Prepare mosaic arrays
+        mosaic_h = self.step_px * (self._rows - 1) + self.tile_h
+        mosaic_w = self.step_px * (self._cols - 1) + self.tile_w
+        self.mosaic_rgb = np.zeros((mosaic_h, mosaic_w, 3), dtype=np.float32)
+        self.mosaic_weight = np.zeros((mosaic_h, mosaic_w), dtype=np.float32)
+
+        # Launch worker
+        self.worker = MosaicWorker(
+            gui=self.main_gui,
+            port=self._port,
+            x0=self._x0,
+            y0=self._y0,
+            tile_order=self._tile_order,
+            tile_repetitions=self._repetitions,
+            af_enabled=self._af_enabled,
+            af_interval=self._af_interval,
+            af_stepsize=self._af_stepsize,
+            af_max_steps=self._af_max_steps,
+            simulate=self._simulate,
+            chan=self._chan
+        )
+        self.worker.tile_ready.connect(self.on_tile_ready)
+        self.worker.finished.connect(self.on_mosaic_complete)
+        self.worker.error.connect(lambda msg: self.update_status(f"Mosaic error: {msg}"))
+        self.worker.start()
         self.update_status("Starting mosaic...")
-        QTimer.singleShot(0, self.process_next_tile)
 
-        self._tile_order_orig = list(self._tile_order)
-
-    def process_next_tile(self):
-        if self.cancelled or not self._tile_order:
-            self.update_status("Mosaic acquisition complete.")
-            self.update_display()
-            self.save_mosaic()
-            return
-
-        i, j, dx_um, dy_um, dx_px, dy_px = self._tile_order.pop(0)
-
-        try:
-            move_xy(self._port, self._x0 + dx_um, self._y0 - dy_um)
-        except Exception as e:
-            self.update_status(f"Move failed: {e}")
-            return
-
-        def after_focus():
-            self.update_status(f"Acquiring tile ({i+1}, {j+1})...")
-            try:
-                for _ in range(self._tile_repetitions):
-                    acquisition.acquire(self.main_gui, auxilary=True)
-                self.blend_tile(i, j, dx_px, dy_px)
-            except Exception as e:
-                self.update_status(f"Acquisition failed: {e}")
-                return
-
-            self._tile_counter += 1
-            QTimer.singleShot(100, self.process_next_tile)
-
-        if self._simulate or not self._af_enabled or (self._tile_counter % self._af_interval != 0):
-            after_focus()
-        else:
-            self.update_status(f"Autofocusing tile ({i+1}, {j+1})...")
-            worker = AutofocusWorker(
-                self.main_gui,
-                self._port,
-                self._chan,
-                step_size=self._af_stepsize,
-                max_steps=self._af_max_steps,
-            )
-            worker.finished.connect(after_focus)
-            worker.error.connect(lambda msg: self.update_status(f"Autofocus error: {msg}"))
-            task = ThreadedTask(worker)
-            QThreadPool.globalInstance().start(task)
-
-    def blend_tile(self, i, j, dx, dy):
-        data = getattr(self.main_gui, 'data', None)
-        if not data or not isinstance(data, (list, tuple)) or len(data) == 0:
-            return
-
+    @pyqtSlot(int, int, int, int, object)
+    def on_tile_ready(self, i, j, dx_px, dy_px, data):
+        self.update_status(f"Acquired tile ({i+1},{j+1})...")
+        # Save tiles
         if self.save_tiles_checkbox.isChecked():
             for ch, frame in enumerate(data):
-                img = Image.fromarray(frame)
-                img.save(os.path.join(self.tile_dir, f"tile_{i}_{j}_ch{ch}.tif"))
+                Image.fromarray(frame).save(os.path.join(self.tile_dir, f"tile_{i}_{j}_ch{ch}.tif"))
+        # Blend
+        tile_rgb = np.zeros((self.tile_h, self.tile_w, 3), dtype=np.float32)
+        visibility = getattr(self.main_gui, 'image_visibility', [True]*len(data))
+        colors = getattr(self.main_gui, 'image_colors', [(255,0,0),(0,255,0),(0,0,255)])
+        for ch, frame in enumerate(data):
+            if ch < len(visibility) and visibility[ch]:
+                norm = frame.astype(np.float32)
+                for c in range(3): tile_rgb[..., c] += norm * (colors[ch][c]/255.0)
+        tile_rgb = np.clip(tile_rgb, 0, 1)
+        y1, y2 = dy_px, dy_px + self.tile_h
+        x1, x2 = dx_px, dx_px + self.tile_w
+        self.mosaic_rgb[y1:y2, x1:x2] += tile_rgb
+        self.mosaic_weight[y1:y2, x1:x2] += 1.0
+        self.update_display()
 
-        if self._show_live_display:
-            visibility = getattr(self.main_gui, 'image_visibility', [True] * len(data))
-            colors = getattr(self.main_gui, 'image_colors', [(255, 0, 0), (0, 255, 0), (0, 0, 255)])
-
-            tile_rgb = np.zeros((self._tile_h, self._tile_w, 3), dtype=np.float32)
-
-            for ch, frame in enumerate(data):
-                if ch < len(visibility) and visibility[ch]:
-                    norm = frame.astype(np.float32)
-                    for c in range(3):
-                        tile_rgb[..., c] += norm * (colors[ch][c] / 255.0)
-
-            tile_rgb = np.clip(tile_rgb, 0, 1)
-
-            y1, y2 = dy, dy + self._tile_h
-            x1, x2 = dx, dx + self._tile_w
-
-            if y2 > self.mosaic_rgb.shape[0] or x2 > self.mosaic_rgb.shape[1]:
-                print(f"Tile ({i},{j}) exceeds mosaic bounds.")
-                return
-
-            self.mosaic_rgb[y1:y2, x1:x2] += tile_rgb
-            self.mosaic_weight[y1:y2, x1:x2] += 1.0
-            self.update_display()
-        else:
-            self.latest_tile_data = data
-            self.update_display()
-            
+    @pyqtSlot()
+    def on_mosaic_complete(self):
+        self.update_status("Mosaic acquisition complete.")
+        self.update_display()
+        self.save_mosaic()
 
     def update_display(self):
-        if self._show_live_display:
-            weight_safe = np.maximum(self.mosaic_weight[..., np.newaxis], 1.0)
-            normalized_rgb = self.mosaic_rgb / weight_safe
-            rgb_uint8 = np.clip(normalized_rgb * 255, 0, 255).astype(np.uint8)
-            h, w, _ = rgb_uint8.shape
-            image = QImage(rgb_uint8.data, w, h, QImage.Format_RGB888)
-        else:
-            data = getattr(self, 'latest_tile_data', None)
-            if not data or not isinstance(data, (list, tuple)) or len(data) == 0:
-                return
-
-            visibility = getattr(self.main_gui, 'image_visibility', [True] * len(data))
-            colors = getattr(self.main_gui, 'image_colors', [(255, 0, 0), (0, 255, 0), (0, 0, 255)])
-
-            tile_h, tile_w = data[0].shape
-            tile_rgb = np.zeros((tile_h, tile_w, 3), dtype=np.float32)
-
-            for ch, frame in enumerate(data):
-                if ch < len(visibility) and visibility[ch]:
-                    norm = frame.astype(np.float32)
-                    for c in range(3):
-                        tile_rgb[..., c] += norm * (colors[ch][c] / 255.0)
-
-            tile_rgb = np.clip(tile_rgb, 0, 1)
-            rgb_uint8 = (tile_rgb * 255).astype(np.uint8)
-            image = QImage(rgb_uint8.data, tile_w, tile_h, QImage.Format_RGB888)
-
-        if self.grid_checkbox.isChecked() and self._show_live_display:
-            painter = QPainter(image)
-            for (i, j), color in self._tile_colors.items():
-                step_px = int(self._tile_w * (1 - self._overlap))
-                dx = int(j * step_px)
-                dy = int(i * step_px)
-                pen = QPen(color)
-                pen.setWidth(3)
-                pen.setStyle(Qt.DashLine if self._overlap > 0 else Qt.SolidLine)
+        weight = np.maximum(self.mosaic_weight[..., np.newaxis], 1.0)
+        norm_rgb = self.mosaic_rgb / weight
+        rgb8 = np.clip(norm_rgb*255,0,255).astype(np.uint8)
+        h, w, _ = rgb8.shape
+        image = QImage(rgb8.data, w, h, QImage.Format_RGB888)
+        painter = QPainter(image)
+        if self.grid_checkbox.isChecked():
+            pen = QPen(); pen.setWidth(2); pen.setStyle(Qt.DashLine)
+            for (i,j), color in self._tile_colors.items():
+                pen.setColor(color)
                 painter.setPen(pen)
-                painter.drawRect(dx, dy, self._tile_w, self._tile_h)
-            painter.end()
-
-        pixmap = QPixmap.fromImage(image)
-        self.display_label.setPixmap(pixmap)
+                painter.drawRect(j*self.step_px, i*self.step_px, self.tile_w, self.tile_h)
+        painter.end()
+        pix = QPixmap.fromImage(image)
+        self.display_label.setPixmap(pix)
         self.display_label.repaint_scaled()
 
     def browse_save_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Save Folder")
-        if folder:
-            self.save_folder_entry.setText(folder)
+        if folder: self.save_folder_entry.setText(folder)
 
     def save_mosaic(self):
         if self.save_metadata_checkbox.isChecked():
-            metadata = {
-                "rows": self._rows,
-                "cols": self._cols,
-                "overlap": self._overlap,
-                "pattern": self._pattern,
-                "fov_um": self._fov_um,
-                "initial_position": (self._x0, self._y0),
-                "tile_order": [(i, j) for (i, j, *_ ) in self._tile_order_orig]
-            }
-            with open(os.path.join(self.save_dir, "mosaic_metadata.json"), "w") as f:
-                json.dump(metadata, f, indent=2)
-
+            md = {"rows":self._rows, "cols":self._cols, "overlap":self._overlap,
+                  "pattern":self._pattern, "fov_um":self._fov_um,
+                  "initial_position":(self._x0,self._y0),
+                  "tile_order":[(i,j) for i,j,*_ in self._tile_order]}
+            with open(os.path.join(self.save_dir,"mosaic_metadata.json"),"w") as f:
+                json.dump(md, f, indent=2)
         if self.save_stitched_checkbox.isChecked():
-            weight_safe = np.maximum(self.mosaic_weight[..., np.newaxis], 1.0)
-            normalized_rgb = self.mosaic_rgb / weight_safe
-            stitched_img = np.clip(normalized_rgb * 255, 0, 255).astype(np.uint8)
-            Image.fromarray(stitched_img).save(os.path.join(self.save_dir, "stitched_mosaic.tif"))
-
+            weight = np.maximum(self.mosaic_weight[...,np.newaxis],1.0)
+            norm_rgb = self.mosaic_rgb / weight
+            img = np.clip(norm_rgb*255,0,255).astype(np.uint8)
+            Image.fromarray(img).save(os.path.join(self.save_dir,"stitched_mosaic.tif"))
         self.update_status("Mosaic saved.")
 
-    def report_memory_estimate(self):
-        try:
-            tile_w, tile_h = self.main_gui.config['numsteps_x'], self.main_gui.config['numsteps_y']  
-            
-            rows = self.rows_spin.value()
-            cols = self.cols_spin.value()
-
-            mosaic_h = tile_h + (rows - 1) * int(tile_h * (1 - self.overlap_spin.value() / 100.0))
-            mosaic_w = tile_w + (cols - 1) * int(tile_w * (1 - self.overlap_spin.value() / 100.0))
-
-            bytes_needed = mosaic_h * mosaic_w * 3 * 4  # float32 RGB
-            approx_gb = bytes_needed / (1024**3)
-
-            if approx_gb > 0.2:
-                self.update_status(f"WARNING: expected memory usage is {approx_gb:.2f} GB. The program will probably crash.")
-            else:
-                self.update_status(f"Expected memory usage: {approx_gb:.2f} GB")
-
-        except Exception as e:
-            self.update_status(f"Memory estimate failed: {e}")
-
-class ThreadedTask(QRunnable):
-    def __init__(self, worker):
-        super().__init__()
-        self.worker = worker
-
-    def run(self):
-        self.worker.run()  # this will emit signals when done
-
-class AutofocusWorker(QObject):
+class MosaicWorker(QThread):
+    tile_ready = pyqtSignal(int,int,int,int,object)
     finished = pyqtSignal()
     error = pyqtSignal(str)
 
-    def __init__(self, gui, port, chan, step_size, max_steps):
+    def __init__(self, gui, port, x0, y0, tile_order, tile_repetitions,
+                 af_enabled, af_interval, af_stepsize, af_max_steps,
+                 simulate, chan):
         super().__init__()
-        self.gui = gui
-        self.port = port
-        self.chan = chan
-        self.step_size = step_size
-        self.max_steps = max_steps
+        self.gui = gui; self.port = port; self.x0 = x0; self.y0 = y0
+        self.tile_order = tile_order; self.tile_repetitions = tile_repetitions
+        self.af_enabled = af_enabled; self.af_interval = af_interval
+        self.af_stepsize = af_stepsize; self.af_max_steps = af_max_steps
+        self.simulate = simulate; self.chan = chan
 
-    @pyqtSlot()
     def run(self):
         try:
-            auto_focus(self.gui, self.port, self.chan,
-                       step_size=int(10*self.step_size), # 100s of nms
-                       numsteps=self.numsteps)
-            self.finished.emit()
-        except Exception as e:
-            self.error.emit(str(e))
-
-class AcquisitionWorker(QObject):
-    finished = pyqtSignal()
-    error = pyqtSignal(str)
-    result = pyqtSignal(list)
-
-    def __init__(self, gui, repetitions=1, delay_ms=0):
-        super().__init__()
-        self.gui = gui
-        self.repetitions = repetitions
-        self.delay_ms = delay_ms
-
-    @pyqtSlot()
-    def run(self):
-        from time import sleep
-        results = []
-        try:
-            for _ in range(self.repetitions):
-                acquisition.acquire(self.gui, auxilary=True)
-                data = getattr(self.gui, 'data', None)
-                if data:
-                    results.append(data)
-                if self.delay_ms > 0:
-                    sleep(self.delay_ms / 1000.0)
-            self.result.emit(results)
+            for idx,(i,j,dx_um,dy_um,dx_px,dy_px) in enumerate(self.tile_order):
+                for _ in range(self.tile_repetitions):
+                    acquisition.acquire(self.gui, auxilary=True)
+                data = getattr(self.gui,'data',[]) or []
+                self.tile_ready.emit(i,j,dx_px,dy_px,data)
+                
+                move_xy(self.port, self.x0+dx_um, self.y0-dy_um)
+                if self.af_enabled and idx % self.af_interval == 0 and not self.simulate:
+                    auto_focus(self.gui, self.port, self.chan,
+                               step_size=self.af_stepsize, numsteps=self.af_max_steps)
+                
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
