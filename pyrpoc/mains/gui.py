@@ -66,8 +66,8 @@ class GUI:
         self.config = {
             'device': 'Dev1',
             'ao_chans': ['ao1', 'ao0'],
-            'ai_chans': ['ai0', 'ai1'],
-            'channel_names': ['505', '642'],
+            'ai_chans': ['ai0'],
+            'channel_names': ['505'],
             'zaber_chan': '3',
             'amp_x': 0.75,
             'amp_y': 0.75,
@@ -487,7 +487,7 @@ class GUI:
         self.prior_move_pos_button.grid(row=1, column=2, padx=5, pady=3, sticky="ew")
 
         ttk.Label(self.z_manual_frame, text="Auto-analysis chan:").grid(row=2, column=0, sticky="e", padx=5, pady=5)
-        self.af_channel_var = tk.StringVar(value="505")
+        self.af_channel_var = tk.StringVar(value="ch0")
         self.af_channel_entry = ttk.Entry(self.z_manual_frame, textvariable=self.af_channel_var, width=10)
         self.af_channel_entry.grid(row=2, column=1, padx=5, pady=5, sticky="ew")
         ttk.Label(self.z_manual_frame, text="Autofocus Spacing (µm):").grid(row=3, column=0, sticky="e", padx=5, pady=5)
@@ -734,7 +734,7 @@ class GUI:
 
             messagebox.showinfo(
                 "Auto-Focus Complete",
-                f"Optimal Z position: {best_z * 0.1:.1f} µm \n      Laplacian: {metric:.2f}"
+                f"Optimal Z position: {best_z * 0.1:.1f} µm \n      Tenengrad: {metric:.2f}"
             )
 
         except Exception as e:

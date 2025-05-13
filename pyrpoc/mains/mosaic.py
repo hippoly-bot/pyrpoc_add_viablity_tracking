@@ -126,12 +126,13 @@ class MosaicDialog(QDialog):
         params_group = QGroupBox("Mosaic Parameters")
         params_layout = QGridLayout(params_group)
 
-        self.rows_spin = QSpinBox(); self.rows_spin.setRange(1, 100); self.rows_spin.setValue(3)
-        self.cols_spin = QSpinBox(); self.cols_spin.setRange(1, 100); self.cols_spin.setValue(3)
+        self.rows_spin = QSpinBox(); self.rows_spin.setRange(1, 1000); self.rows_spin.setValue(3)
+        self.cols_spin = QSpinBox(); self.cols_spin.setRange(1, 1000); self.cols_spin.setValue(3)
         self.overlap_spin = QSpinBox(); self.overlap_spin.setRange(0, 100); self.overlap_spin.setValue(10)
         self.repetitions_spin = QSpinBox(); self.repetitions_spin.setRange(1, 100); self.repetitions_spin.setValue(1)
         self.pattern_combo = QComboBox(); self.pattern_combo.addItems(["Snake", "Raster"])
         self.fov_um_spin = QSpinBox(); self.fov_um_spin.setRange(1, 10000); self.fov_um_spin.setValue(100)
+        self.repetitions_spin = QSpinBox(); self.repetitions_spin.setRange(1,100); self.repetitions_spin.setValue(1)
         self.grid_checkbox = QCheckBox("Show Tile Grid"); self.grid_checkbox.setChecked(True)
         self.display_mosaic_checkbox = QCheckBox("Display Mosaic Live")
         self.display_mosaic_checkbox.setChecked(True)
@@ -168,18 +169,18 @@ class MosaicDialog(QDialog):
         self.af_group = QGroupBox("Autofocus Settings")
         af_layout = QGridLayout(self.af_group)
 
-        self.af_enabled_checkbox = QCheckBox("Enable Autofocus")
+        self.af_enabled_checkbox = QCheckBox("Enable autofocus")
         self.af_enabled_checkbox.setChecked(True)
 
-        self.af_every_n_label = QLabel("Tiles per Autofocus:")
+        self.af_every_n_label = QLabel("Tiles per autofocus:")
         self.af_every_n_spin = QSpinBox()
         self.af_every_n_spin.setRange(1, 100)
         self.af_every_n_spin.setValue(1)
 
-        self.af_numsteps_label = QLabel("Steps per Autofocus:")
-        self.af_numsteps_spin = QSpinBox()
-        self.af_numsteps_spin.setRange(1, 100)
-        self.af_numsteps_spin.setValue(5)
+        self.af_max_steps_label = QLabel("Max steps per autofocus:")
+        self.af_max_steps_spin = QSpinBox()
+        self.af_max_steps_spin.setRange(1, 100)
+        self.af_max_steps_spin.setValue(5)
 
         self.af_stepsize_label = QLabel("Step Size (μm):")
         self.af_stepsize_spin = QDoubleSpinBox()
@@ -190,7 +191,7 @@ class MosaicDialog(QDialog):
 
         af_layout.addWidget(self.af_enabled_checkbox, 0, 0, 1, 2)
         af_layout.addWidget(self.af_every_n_label, 1, 0); af_layout.addWidget(self.af_every_n_spin, 1, 1)
-        af_layout.addWidget(self.af_numsteps_label, 2, 0); af_layout.addWidget(self.af_numsteps_spin, 2, 1)
+        af_layout.addWidget(self.af_max_steps_label, 2, 0); af_layout.addWidget(self.af_max_steps_spin, 2, 1)
         af_layout.addWidget(self.af_stepsize_label, 3, 0); af_layout.addWidget(self.af_stepsize_spin, 3, 1)
 
         self.sidebar_layout.addWidget(self.save_group)
@@ -249,7 +250,7 @@ class MosaicDialog(QDialog):
         self._fov_um = self.fov_um_spin.value()
         self._af_enabled = self.af_enabled_checkbox.isChecked()
         self._af_interval = self.af_every_n_spin.value()
-        self._af_numsteps = self.af_numsteps_spin.value()
+        self._af_max_steps = self.af_max_steps_spin.value()
         self._af_stepsize = self.af_stepsize_spin.value()
         self._tile_counter = 0
         self._show_live_display = self.display_mosaic_checkbox.isChecked()
@@ -262,7 +263,9 @@ class MosaicDialog(QDialog):
             self.update_status(f"Stage error: {e}")
             return
 
-        acquisition.acquire(self.main_gui, auxilary=True)
+        for _ in range(self._tile_repetitions):
+            acquisition.acquire(self.main_gui, auxilary=True)
+
         data = getattr(self.main_gui, 'data', None)
         if not data or not isinstance(data, (list, tuple)) or len(data) == 0:
             self.update_status("Acquisition failed.")
@@ -321,7 +324,8 @@ class MosaicDialog(QDialog):
         def after_focus():
             self.update_status(f"Acquiring tile ({i+1}, {j+1})...")
             try:
-                acquisition.acquire(self.main_gui, auxilary=True)
+                for _ in range(self._tile_repetitions):
+                    acquisition.acquire(self.main_gui, auxilary=True)
                 self.blend_tile(i, j, dx_px, dy_px)
             except Exception as e:
                 self.update_status(f"Acquisition failed: {e}")
@@ -331,7 +335,6 @@ class MosaicDialog(QDialog):
             QTimer.singleShot(100, self.process_next_tile)
 
         if self._simulate or not self._af_enabled or (self._tile_counter % self._af_interval != 0):
-            # No autofocus this tile
             after_focus()
         else:
             self.update_status(f"Autofocusing tile ({i+1}, {j+1})...")
@@ -340,7 +343,7 @@ class MosaicDialog(QDialog):
                 self._port,
                 self._chan,
                 step_size=self._af_stepsize,
-                numsteps=self._af_numsteps,
+                max_steps=self._af_max_steps,
             )
             worker.finished.connect(after_focus)
             worker.error.connect(lambda msg: self.update_status(f"Autofocus error: {msg}"))
@@ -491,13 +494,13 @@ class AutofocusWorker(QObject):
     finished = pyqtSignal()
     error = pyqtSignal(str)
 
-    def __init__(self, gui, port, chan, step_size, numsteps):
+    def __init__(self, gui, port, chan, step_size, max_steps):
         super().__init__()
         self.gui = gui
         self.port = port
         self.chan = chan
         self.step_size = step_size
-        self.numsteps = numsteps
+        self.max_steps = max_steps
 
     @pyqtSlot()
     def run(self):

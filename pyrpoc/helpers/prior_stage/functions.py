@@ -79,7 +79,7 @@ def wait_for_z_motion():
 
         time.sleep(0.1)
 
-def auto_focus(gui, port: int, channel_name: str, step_size=5, max_steps=20, min_improvement=5.0, min_start_metric=50.0):
+def auto_focus(gui, port: int, channel_name: str, step_size=5, max_steps=20, min_improvement=5.0, min_acceptance=30, min_start_metric=15.0):
     connect_prior(port)
     gui.simulation_mode.set(False)
     gui.acquiring = True
@@ -108,8 +108,9 @@ def auto_focus(gui, port: int, channel_name: str, step_size=5, max_steps=20, min
         return np.mean(np.sqrt(sobelx**2 + sobely**2))
 
     best_z = current_z
-    best_metric = evaluate_tenengrad(current_z)
-    print(f"[Autofocus] Start Z={current_z}, tenengrad={best_metric:.2f}")
+    start_metric = evaluate_tenengrad(current_z)
+    best_metric = start_metric
+    print(f"[Autofocus] Start Z={current_z}, tenengrad={start_metric:.2f}")
 
     if best_metric < min_start_metric:
         print("[Autofocus] Initial focus metric too low — aborting autofocus.")
@@ -124,9 +125,7 @@ def auto_focus(gui, port: int, channel_name: str, step_size=5, max_steps=20, min
         trial_metric = evaluate_tenengrad(trial_z)
         print(f"[Autofocus] Z={trial_z}, Tenengrad={trial_metric:.2f}")
 
-        improvement = trial_metric - best_metric
-
-        if improvement > min_improvement:
+        if trial_metric - best_metric > 0:
             best_z = trial_z
             best_metric = trial_metric
             steps += 1
@@ -137,7 +136,7 @@ def auto_focus(gui, port: int, channel_name: str, step_size=5, max_steps=20, min
                 break  # both directions exhausted
             steps += 1
 
-    if best_z != current_z and best_metric - best_metric < min_improvement:
+    if best_z != current_z and best_metric - start_metric < min_improvement:
         print("[Autofocus] Final improvement too small — staying at original Z.")
         best_z = current_z
 
