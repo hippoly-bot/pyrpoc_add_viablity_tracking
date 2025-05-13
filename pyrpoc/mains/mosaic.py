@@ -12,6 +12,7 @@ import random
 import json
 import os
 from PIL import Image
+import matplotlib.pyplot as plt
 
 class ZoomableLabel(QLabel):
     def __init__(self, scroll_area=None):
@@ -114,6 +115,7 @@ class MosaicDialog(QDialog):
         self.save_metadata_checkbox = QCheckBox("Save Metadata (.json)")
         self.save_stitched_checkbox = QCheckBox("Save Stitched TIFF")
         self.save_tiles_checkbox = QCheckBox("Save Individual Tiles")
+        self.save_averages_checkbox = QCheckBox("Save Averages of Repetitions")
 
         self.save_metadata_checkbox.setChecked(True)
         self.save_stitched_checkbox.setChecked(True)
@@ -122,6 +124,7 @@ class MosaicDialog(QDialog):
         save_layout.addWidget(self.save_metadata_checkbox, 1, 0, 1, 3)
         save_layout.addWidget(self.save_stitched_checkbox, 2, 0, 1, 3)
         save_layout.addWidget(self.save_tiles_checkbox, 3, 0, 1, 3)
+        save_layout.addWidget(self.save_averages_checkbox, 4, 0, 1, 3)
 
         params_group = QGroupBox("Mosaic Parameters")
         params_layout = QGridLayout(params_group)
@@ -150,7 +153,7 @@ class MosaicDialog(QDialog):
         params_layout.addWidget(QLabel("Overlap (%):"), 2, 0)
         params_layout.addWidget(self.overlap_spin, 2, 1)
         params_layout.addWidget(QLabel('Repetitions per Tile'), 3, 0)
-        params_layout.addWidget(self.overlap_spin, 3, 1)
+        params_layout.addWidget(self.repetitions_spin, 3, 1)
         params_layout.addWidget(QLabel("Pattern:"), 4, 0)
         params_layout.addWidget(self.pattern_combo, 4, 1)
         params_layout.addWidget(QLabel("FOV Size (μm):"), 5, 0)
@@ -251,24 +254,22 @@ class MosaicDialog(QDialog):
         self._af_max_steps = self.af_max_steps_spin.value()
         self._af_stepsize = int(10 * self.af_stepsize_spin.value())
         self._simulate = self.main_gui.simulation_mode.get()
+        self._save_averages = self.save_averages_checkbox.isChecked()
         self._chan = self.main_gui.config["channel_names"][0]
 
-        # Initial stage position
         try:
-            port = int(self.main_gui.prior_port_entry.text().strip())
+            port = int(self.main_gui.prior_port_entry.get().strip())
             x0, y0 = get_xy(port)
             self._port, self._x0, self._y0 = port, x0, y0
         except Exception as e:
             self.update_status(f"Stage error: {e}")
             return
 
-        # Use config to get tile dimensions instead of an initial acquisition
-        self.tile_w = self.main_gui.config.get('numsteps_x')
-        self.tile_h = self.main_gui.config.get('numsteps_y')
+        self.tile_w = self.main_gui.config['numsteps_x']
+        self.tile_h = self.main_gui.config['numsteps_y']
         self.step_px = int(self.tile_w * (1 - self._overlap))
         self.step_um = int(self._fov_um * (1 - self._overlap))
 
-        # Build tile order & colors
         self._tile_order = []
         self._tile_colors = {}
         for i in range(self._rows):
@@ -281,13 +282,11 @@ class MosaicDialog(QDialog):
                 self._tile_order.append((i, j, dx_um, dy_um, dx_px, dy_px))
                 self._tile_colors[(i, j)] = QColor(*[random.randint(180,255) for _ in range(3)], 220)
 
-        # Prepare mosaic arrays
         mosaic_h = self.step_px * (self._rows - 1) + self.tile_h
         mosaic_w = self.step_px * (self._cols - 1) + self.tile_w
         self.mosaic_rgb = np.zeros((mosaic_h, mosaic_w, 3), dtype=np.float32)
         self.mosaic_weight = np.zeros((mosaic_h, mosaic_w), dtype=np.float32)
 
-        # Launch worker
         self.worker = MosaicWorker(
             gui=self.main_gui,
             port=self._port,
@@ -302,20 +301,23 @@ class MosaicDialog(QDialog):
             simulate=self._simulate,
             chan=self._chan
         )
+
         self.worker.tile_ready.connect(self.on_tile_ready)
         self.worker.finished.connect(self.on_mosaic_complete)
         self.worker.error.connect(lambda msg: self.update_status(f"Mosaic error: {msg}"))
+        self.worker.status_update.connect(self.update_status)
+
         self.worker.start()
         self.update_status("Starting mosaic...")
 
     @pyqtSlot(int, int, int, int, object)
     def on_tile_ready(self, i, j, dx_px, dy_px, data):
         self.update_status(f"Acquired tile ({i+1},{j+1})...")
-        # Save tiles
+
         if self.save_tiles_checkbox.isChecked():
             for ch, frame in enumerate(data):
                 Image.fromarray(frame).save(os.path.join(self.tile_dir, f"tile_{i}_{j}_ch{ch}.tif"))
-        # Blend
+
         tile_rgb = np.zeros((self.tile_h, self.tile_w, 3), dtype=np.float32)
         visibility = getattr(self.main_gui, 'image_visibility', [True]*len(data))
         colors = getattr(self.main_gui, 'image_colors', [(255,0,0),(0,255,0),(0,0,255)])
@@ -335,6 +337,24 @@ class MosaicDialog(QDialog):
         self.update_status("Mosaic acquisition complete.")
         self.update_display()
         self.save_mosaic()
+
+        if self._save_averages:
+            stats = self.worker.tile_statistics
+            fig, ax = plt.subplots(figsize=(6,4))
+            for curve in stats:
+                ax.plot(range(1, len(curve)+1), curve, alpha=0.5)
+
+            ax.set_xlabel('Repetition')
+            ax.set_ylabel('Average Intensity')
+            ax.set_title('Photobleaching Decay Curves')
+            fig.tight_layout()
+
+            outpath = os.path.join(self.save_dir, "decay_curves.png")
+            fig.savefig(outpath)
+            plt.close(fig)
+
+            self.update_status(f"Decay curves saved to:\n{outpath}")
+        
 
     def update_display(self):
         weight = np.maximum(self.mosaic_weight[..., np.newaxis], 1.0)
@@ -373,10 +393,32 @@ class MosaicDialog(QDialog):
             Image.fromarray(img).save(os.path.join(self.save_dir,"stitched_mosaic.tif"))
         self.update_status("Mosaic saved.")
 
+    def report_memory_estimate(self):
+        try:
+            tile_w, tile_h = self.main_gui.config['numsteps_x'], self.main_gui.config['numsteps_y']  
+            
+            rows = self.rows_spin.value()
+            cols = self.cols_spin.value()
+
+            mosaic_h = tile_h + (rows - 1) * int(tile_h * (1 - self.overlap_spin.value() / 100.0))
+            mosaic_w = tile_w + (cols - 1) * int(tile_w * (1 - self.overlap_spin.value() / 100.0))
+
+            bytes_needed = mosaic_h * mosaic_w * 3 * 4  # float32 RGB
+            approx_gb = bytes_needed / (1024**3)
+
+            if approx_gb > 0.2:
+                self.update_status(f"WARNING: expected memory usage is {approx_gb:.2f} GB. The program will probably crash.")
+            else:
+                self.update_status(f"Expected memory usage: {approx_gb:.2f} GB")
+
+        except Exception as e:
+            self.update_status(f"Memory estimate failed: {e}")
+
 class MosaicWorker(QThread):
-    tile_ready = pyqtSignal(int,int,int,int,object)
+    tile_ready = pyqtSignal(int, int, int, int, object)
     finished = pyqtSignal()
     error = pyqtSignal(str)
+    status_update = pyqtSignal(str)
 
     def __init__(self, gui, port, x0, y0, tile_order, tile_repetitions,
                  af_enabled, af_interval, af_stepsize, af_max_steps,
@@ -387,20 +429,30 @@ class MosaicWorker(QThread):
         self.af_enabled = af_enabled; self.af_interval = af_interval
         self.af_stepsize = af_stepsize; self.af_max_steps = af_max_steps
         self.simulate = simulate; self.chan = chan
+        self.tile_statistics = [[] for _ in range(len(self.tile_order))]
 
     def run(self):
         try:
-            for idx,(i,j,dx_um,dy_um,dx_px,dy_px) in enumerate(self.tile_order):
-                for _ in range(self.tile_repetitions):
+            for idx, (i, j, dx_um, dy_um, dx_px, dy_px) in enumerate(self.tile_order):
+                for k in range(self.tile_repetitions):
+                    self.status_update.emit(f"Acquiring tile ({i+1},{j+1}), frame {k+1}")
                     acquisition.acquire(self.gui, auxilary=True)
-                data = getattr(self.gui,'data',[]) or []
-                self.tile_ready.emit(i,j,dx_px,dy_px,data)
-                
-                move_xy(self.port, self.x0+dx_um, self.y0-dy_um)
+
+                    data = getattr(self.gui, 'data', []) or []
+                    avg = float(np.mean([frame.mean() for frame in data]))
+                    self.tile_statistics[idx].append(avg)
+
+                data = getattr(self.gui, 'data', []) or []
+                self.tile_ready.emit(i, j, dx_px, dy_px, data)
+
+                move_xy(self.port, self.x0 + dx_um, self.y0 - dy_um)
+
                 if self.af_enabled and idx % self.af_interval == 0 and not self.simulate:
+                    self.status_update.emit(f"Autofocusing post-tile ({i+1},{j+1})")
                     auto_focus(self.gui, self.port, self.chan,
-                               step_size=self.af_stepsize, numsteps=self.af_max_steps)
-                
+                               step_size=self.af_stepsize, max_steps=self.af_max_steps)
+
             self.finished.emit()
+
         except Exception as e:
             self.error.emit(str(e))

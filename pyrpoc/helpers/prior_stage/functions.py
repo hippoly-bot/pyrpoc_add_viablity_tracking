@@ -63,7 +63,7 @@ def send_command(command):
     return ret, response
 
 
-def wait_for_z_motion():
+def wait_for_motion():
     while True:
         _, response = send_command("controller.z.busy.get")
 
@@ -99,7 +99,7 @@ def auto_focus(gui, port: int, channel_name: str, step_size=5, max_steps=20, min
 
     def evaluate_tenengrad(z):
         send_command(f"controller.z.goto-position {z}")
-        wait_for_z_motion()
+        wait_for_motion()
         acquisition.acquire(gui, auxilary=True, force_no_mask=True)
         image = gui.data[channel_index]
         gray = (image * 255).clip(0, 255).astype(np.uint8)
@@ -141,7 +141,7 @@ def auto_focus(gui, port: int, channel_name: str, step_size=5, max_steps=20, min
         best_z = current_z
 
     send_command(f"controller.z.goto-position {best_z}")
-    wait_for_z_motion()
+    wait_for_motion()
     acquisition.acquire(gui, auxilary=True)
 
     gui.acquiring = False
@@ -197,7 +197,7 @@ def move_z(port: int, z_height: int):
     ret, _ = send_command(f"controller.z.goto-position {z_height}")
     if ret != 0:
         raise RuntimeError(f"Could not move Prior stage to {z_height} µm.")
-    wait_for_z_motion()
+    wait_for_motion()
 
 
 def move_xy(port: int, x: int, y: int):
@@ -210,6 +210,8 @@ def move_xy(port: int, x: int, y: int):
     ret, _ = send_command(f"controller.stage.goto-position {x} {y}")
     if ret != 0:
         raise RuntimeError(f"Could not move Prior stage to {x}, {y}.")
+    wait_for_motion()
+
 
 def get_xy(port: int):
     # returns x, y as integers
