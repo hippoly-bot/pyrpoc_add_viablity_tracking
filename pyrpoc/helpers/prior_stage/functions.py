@@ -210,6 +210,7 @@ def move_xy(port: int, x: int, y: int):
     ret, _ = send_command(f"controller.stage.goto-position {x} {y}")
     if ret != 0:
         raise RuntimeError(f"Could not move Prior stage to {x}, {y}.")
+    
     wait_for_motion()
 
 

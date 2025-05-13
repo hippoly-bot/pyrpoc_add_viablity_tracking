@@ -434,6 +434,12 @@ class MosaicWorker(QThread):
     def run(self):
         try:
             for idx, (i, j, dx_um, dy_um, dx_px, dy_px) in enumerate(self.tile_order):
+                move_xy(self.port, self.x0 + dx_um, self.y0 - dy_um)
+                if self.af_enabled and idx % self.af_interval == 0 and not self.simulate:
+                    self.status_update.emit(f"Autofocusing post-tile ({i+1},{j+1})")
+                    auto_focus(self.gui, self.port, self.chan,
+                               step_size=self.af_stepsize, max_steps=self.af_max_steps)
+                    
                 for k in range(self.tile_repetitions):
                     self.status_update.emit(f"Acquiring tile ({i+1},{j+1}), frame {k+1}")
                     acquisition.acquire(self.gui, auxilary=True)
@@ -444,14 +450,7 @@ class MosaicWorker(QThread):
 
                 data = getattr(self.gui, 'data', []) or []
                 self.tile_ready.emit(i, j, dx_px, dy_px, data)
-
-                move_xy(self.port, self.x0 + dx_um, self.y0 - dy_um)
-
-                if self.af_enabled and idx % self.af_interval == 0 and not self.simulate:
-                    self.status_update.emit(f"Autofocusing post-tile ({i+1},{j+1})")
-                    auto_focus(self.gui, self.port, self.chan,
-                               step_size=self.af_stepsize, max_steps=self.af_max_steps)
-
+                
             self.finished.emit()
 
         except Exception as e:
