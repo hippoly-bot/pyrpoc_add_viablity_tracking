@@ -62,7 +62,8 @@ def display_data(gui, data_list):
 
         ch_ax = gui.channel_axes[i]
         ax_main = ch_ax["main"]
-        ny, nx = data.shape
+        nx = gui.config["numsteps_x"]
+        ny = gui.config["numsteps_y"]
 
         if 'channel_names' in gui.config and i < len(gui.config['channel_names']):
             channel_name = gui.config['channel_names'][i]
@@ -70,15 +71,22 @@ def display_data(gui, data_list):
             channel_name = gui.config['ai_chans'][i] if i < len(gui.config['ai_chans']) else f"chan{i}"
         ax_main.set_title(channel_name, fontsize=10, color='white')
 
-        x_extent = np.linspace(gui.config['offset_x'] - gui.config['amp_x'],
-                               gui.config['offset_x'] + gui.config['amp_x'], nx)
-        y_extent = np.linspace(gui.config['offset_y'] + gui.config['amp_y'],
-                               gui.config['offset_y'] - gui.config['amp_y'], ny)
+        x_extent = np.linspace(
+            gui.config['offset_x'] - gui.config['amp_x'],
+            gui.config['offset_x'] + gui.config['amp_x'],
+            nx
+        )
+        y_extent = np.linspace(
+            gui.config['offset_y'] + gui.config['amp_y'],
+            gui.config['offset_y'] - gui.config['amp_y'],
+            ny
+        )
 
+        extent = [x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]]
         if ch_ax["img_handle"] is None:
             im = ax_main.imshow(
                 data,
-                extent=[x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]],
+                extent=extent,
                 origin='upper',
                 aspect='equal',
                 cmap=gui.grayred_cmap
@@ -115,7 +123,9 @@ def display_data(gui, data_list):
                 except ValueError:
                     im.set_clim(vmin=data.min(), vmax=data.max())
 
-            im.set_extent([x_extent[0], x_extent[-1], y_extent[-1], y_extent[0]])
+            im.set_extent(extent)
+            ax_main.set_xlim(extent[0], extent[1])
+            ax_main.set_ylim(extent[2], extent[3])
 
         sx = gui.slice_x[i] if gui.slice_x[i] is not None and gui.slice_x[i] < nx else nx // 2
         sy = gui.slice_y[i] if gui.slice_y[i] is not None and gui.slice_y[i] < ny else ny // 2

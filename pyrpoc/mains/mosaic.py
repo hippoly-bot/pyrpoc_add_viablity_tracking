@@ -47,6 +47,7 @@ class MosaicDialog(QDialog):
         self.save_metadata_checkbox = QCheckBox("Save Metadata (.json)")
         self.save_stitched_checkbox = QCheckBox("Save Stitched TIFF")
         self.save_tiles_checkbox = QCheckBox("Save Individual Tiles")
+        self.save_averages_checkbox = QCheckBox("Save Averages of Repetitions")
 
         self.save_metadata_checkbox.setChecked(True)
         self.save_stitched_checkbox.setChecked(True)
@@ -55,6 +56,7 @@ class MosaicDialog(QDialog):
         save_layout.addWidget(self.save_metadata_checkbox, 1, 0, 1, 3)
         save_layout.addWidget(self.save_stitched_checkbox, 2, 0, 1, 3)
         save_layout.addWidget(self.save_tiles_checkbox, 3, 0, 1, 3)
+        save_layout.addWidget(self.save_averages_checkbox, 4, 0, 1, 3)
 
         params_group = QGroupBox("Mosaic Parameters")
         params_layout = QGridLayout(params_group)
@@ -81,7 +83,7 @@ class MosaicDialog(QDialog):
         params_layout.addWidget(QLabel("Overlap (%):"), 2, 0)
         params_layout.addWidget(self.overlap_spin, 2, 1)
         params_layout.addWidget(QLabel('Repetitions per Tile'), 3, 0)
-        params_layout.addWidget(self.overlap_spin, 3, 1)
+        params_layout.addWidget(self.repetitions_spin, 3, 1)
         params_layout.addWidget(QLabel("Pattern:"), 4, 0)
         params_layout.addWidget(self.pattern_combo, 4, 1)
         params_layout.addWidget(QLabel("FOV Size (μm):"), 5, 0)
@@ -247,9 +249,10 @@ class MosaicDialog(QDialog):
         if folder: self.save_folder_entry.setText(folder)
 
 class MosaicWorker(QThread):
-    tile_ready = pyqtSignal(int,int,int,int,object)
+    tile_ready = pyqtSignal(int, int, int, int, object)
     finished = pyqtSignal()
     error = pyqtSignal(str)
+    status_update = pyqtSignal(str)
 
     def __init__(self, gui, port, x0, y0, tile_order, tile_repetitions,
                  af_enabled, af_interval, af_stepsize, af_max_steps,
@@ -260,20 +263,29 @@ class MosaicWorker(QThread):
         self.af_enabled = af_enabled; self.af_interval = af_interval
         self.af_stepsize = af_stepsize; self.af_max_steps = af_max_steps
         self.simulate = simulate; self.chan = chan
+        self.tile_statistics = [[] for _ in range(len(self.tile_order))]
 
     def run(self):
         try:
-            for idx,(i,j,dx_um,dy_um,dx_px,dy_px) in enumerate(self.tile_order):
-                for _ in range(self.tile_repetitions):
-                    acquisition.acquire(self.gui, auxilary=True)
-                data = getattr(self.gui,'data',[]) or []
-                self.tile_ready.emit(i,j,dx_px,dy_px,data)
-                
-                move_xy(self.port, self.x0+dx_um, self.y0-dy_um)
+            for idx, (i, j, dx_um, dy_um, dx_px, dy_px) in enumerate(self.tile_order):
+                move_xy(self.port, self.x0 + dx_um, self.y0 - dy_um)
                 if self.af_enabled and idx % self.af_interval == 0 and not self.simulate:
+                    self.status_update.emit(f"Autofocusing post-tile ({i+1},{j+1})")
                     auto_focus(self.gui, self.port, self.chan,
-                               step_size=self.af_stepsize, numsteps=self.af_max_steps)
+                               step_size=self.af_stepsize, max_steps=self.af_max_steps)
+                    
+                for k in range(self.tile_repetitions):
+                    self.status_update.emit(f"Acquiring tile ({i+1},{j+1}), frame {k+1}")
+                    acquisition.acquire(self.gui, auxilary=True)
+
+                    data = getattr(self.gui, 'data', []) or []
+                    avg = float(np.mean([frame.mean() for frame in data]))
+                    self.tile_statistics[idx].append(avg)
+
+                data = getattr(self.gui, 'data', []) or []
+                self.tile_ready.emit(i, j, dx_px, dy_px, data)
                 
             self.finished.emit()
+
         except Exception as e:
             self.error.emit(str(e))
