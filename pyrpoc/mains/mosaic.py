@@ -13,6 +13,7 @@ import json
 import os
 from PIL import Image
 import matplotlib.pyplot as plt
+import pandas as pd
 
 class MosaicCanvas:
     def __init__(self, tile_w, tile_h, step_px, rows, cols):
@@ -193,15 +194,19 @@ class MosaicDialog(QDialog):
         self.save_stitched_checkbox = QCheckBox("Save Stitched TIFF")
         self.save_tiles_checkbox = QCheckBox("Save Individual Tiles")
         self.save_averages_checkbox = QCheckBox("Save Averages of Repetitions")
+        self.save_focus_metrics_checkbox = QCheckBox("Save Tile Focus Metrics")
 
-        self.save_metadata_checkbox.setChecked(True)
-        self.save_stitched_checkbox.setChecked(True)
-        self.save_tiles_checkbox.setChecked(True)
+        self.save_metadata_checkbox.setChecked(False)
+        self.save_stitched_checkbox.setChecked(False)
+        self.save_tiles_checkbox.setChecked(False)
+        self.save_averages_checkbox.setChecked(False)
+        self.save_focus_metrics_checkbox.setChecked(False)
 
         save_layout.addWidget(self.save_metadata_checkbox, 1, 0, 1, 3)
         save_layout.addWidget(self.save_stitched_checkbox, 2, 0, 1, 3)
         save_layout.addWidget(self.save_tiles_checkbox, 3, 0, 1, 3)
         save_layout.addWidget(self.save_averages_checkbox, 4, 0, 1, 3)
+        save_layout.addWidget(self.save_focus_metrics_checkbox, 5, 0, 1, 3)
 
         params_group = QGroupBox("Mosaic Parameters")
         params_layout = QGridLayout(params_group)
@@ -412,22 +417,28 @@ class MosaicDialog(QDialog):
         self.update_display()
         self.save_mosaic()
 
+        stats_df = None
+        outpath = os.path.join(self.save_dir, "mosaic_data.csv")
+
         if self._save_averages:
             stats = self.worker.tile_statistics
-            fig, ax = plt.subplots(figsize=(6,4))
-            for curve in stats:
-                ax.plot(range(1, len(curve)+1), curve, alpha=0.5)
+            tile_labels = [f"Tile ({i+1},{j+1})" for i, j, *_ in self.worker.tile_order]
+            stats_df = pd.DataFrame(stats).T  
+            stats_df.columns = tile_labels
+            stats_df.index.name = "Repetition Index"
 
-            ax.set_xlabel('Repetition')
-            ax.set_ylabel('Average Intensity')
-            ax.set_title('Photobleaching Decay Curves')
-            fig.tight_layout()
+        if self.save_focus_metrics_checkbox:
+            focus_metrics = pd.Series(self.worker.focus_metrics, name="Focus Metric")
+            if stats_df is not None:
+                stats_df["Focus Metric"] = focus_metrics.values
+            else:
+                stats_df = pd.DataFrame({"Focus Metric": focus_metrics})
 
-            outpath = os.path.join(self.save_dir, "decay_curves.png")
-            fig.savefig(outpath)
-            plt.close(fig)
+        if stats_df is not None:
+            stats_df.to_csv(outpath)
+            self.update_status(f"Mosaic data saved to:\n{outpath}")
 
-            self.update_status(f"Decay curves saved to:\n{outpath}")
+            
         
 
     def update_display(self):
@@ -502,6 +513,7 @@ class MosaicWorker(QThread):
         self.af_stepsize = af_stepsize; self.af_max_steps = af_max_steps
         self.simulate = simulate; self.chan = chan
         self.tile_statistics = [[] for _ in range(len(self.tile_order))]
+        self.focus_metrics = []
 
     def run(self):
         try:
@@ -509,8 +521,8 @@ class MosaicWorker(QThread):
                 move_xy(self.port, self.x0 + dx_um, self.y0 - dy_um)
                 if self.af_enabled and idx % self.af_interval == 0 and not self.simulate:
                     self.status_update.emit(f"Autofocusing post-tile ({i+1},{j+1})")
-                    auto_focus(self.gui, self.port, self.chan,
-                               step_size=self.af_stepsize, max_steps=self.af_max_steps)
+                    z_val, metric = auto_focus(self.gui, self.port, self.chan, step_size=self.af_stepsize, max_steps=self.af_max_steps)
+                    self.focus_metrics.append(metric)
                     
                 for k in range(self.tile_repetitions):
                     self.status_update.emit(f"Acquiring tile ({i+1},{j+1}), frame {k+1}")
