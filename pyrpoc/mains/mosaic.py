@@ -422,17 +422,33 @@ class MosaicDialog(QDialog):
 
         if self._save_averages:
             stats = self.worker.tile_statistics
-            tile_labels = [f"Tile ({i+1},{j+1})" for i, j, *_ in self.worker.tile_order]
-            stats_df = pd.DataFrame(stats).T  
-            stats_df.columns = tile_labels
-            stats_df.index.name = "Repetition Index"
+            fig, ax = plt.subplots(figsize=(6,4))
+            for curve in stats:
+                ax.plot(range(1, len(curve)+1), curve, alpha=0.5)
 
-        if self.save_focus_metrics_checkbox:
-            focus_metrics = pd.Series(self.worker.focus_metrics, name="Focus Metric")
-            if stats_df is not None:
-                stats_df["Focus Metric"] = focus_metrics.values
-            else:
-                stats_df = pd.DataFrame({"Focus Metric": focus_metrics})
+            ax.set_xlabel('Repetition')
+            ax.set_ylabel('Average Intensity')
+            ax.set_title('Photobleaching Decay Curves')
+            fig.tight_layout()
+
+            outpath = os.path.join(self.save_dir, "decay_curves.png")
+            fig.savefig(outpath)
+            plt.close(fig)
+
+            self.update_status(f"Decay curves saved to:\n{outpath}")
+
+            # stats = self.worker.tile_statistics
+            # tile_labels = [f"Tile ({i+1},{j+1})" for i, j, *_ in self.worker.tile_order]
+            # stats_df = pd.DataFrame(stats).T  
+            # stats_df.columns = tile_labels
+            # stats_df.index.name = "Repetition Index"
+
+        # if self.save_focus_metrics_checkbox:
+        #     focus_metrics = pd.Series(self.worker.focus_metrics, name="Focus Metric")
+        #     if stats_df is not None:
+        #         stats_df["Focus Metric"] = focus_metrics.values
+        #     else:
+        #         stats_df = pd.DataFrame({"Focus Metric": focus_metrics})
 
         if stats_df is not None:
             stats_df.to_csv(outpath)
@@ -529,7 +545,10 @@ class MosaicWorker(QThread):
                     acquisition.acquire(self.gui, auxilary=True)
 
                     data = getattr(self.gui, 'data', []) or []
-                    avg = float(np.mean([frame.mean() for frame in data]))
+                    avg = float(np.mean([
+                        frame[frame >= 0.25 * frame.max()].mean() if np.any(frame >= 0.25 * frame.max()) else 0
+                        for frame in data
+                    ]))
                     self.tile_statistics[idx].append(avg)
 
                 data = getattr(self.gui, 'data', []) or []
