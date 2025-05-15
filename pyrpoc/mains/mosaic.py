@@ -1,8 +1,7 @@
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QGroupBox, QGridLayout, QLabel, QSpinBox,
     QComboBox, QPushButton, QScrollArea, QWidget, QCheckBox, QFileDialog,
-    QHBoxLayout, QLineEdit, QDoubleSpinBox, QGraphicsScene, QGraphicsView,
-    QGraphicsPixmapItem
+    QHBoxLayout, QLineEdit, QDoubleSpinBox
 )
 from PyQt5.QtGui import QPixmap, QImage, QPainter, QColor, QPen
 from PyQt5.QtCore import Qt, QTimer, QRunnable, QThread, QThreadPool, QObject, pyqtSignal, pyqtSlot
@@ -13,6 +12,75 @@ import random
 import json
 import os
 from PIL import Image
+import matplotlib.pyplot as plt
+
+class ZoomableLabel(QLabel):
+    def __init__(self, scroll_area=None):
+        super().__init__()
+        self.scroll_area = scroll_area
+        self._pixmap = None
+        self.scale_factor = 1.0
+        self._drag_pos = None
+        self.setMouseTracking(True)
+        self.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+
+    def setPixmap(self, pixmap: QPixmap):
+        self._pixmap = pixmap
+        self.repaint_scaled()
+
+    def wheelEvent(self, event):
+        if not self._pixmap:
+            return
+
+        old_pos = event.pos()
+        old_scroll_x = self.scroll_area.horizontalScrollBar().value()
+        old_scroll_y = self.scroll_area.verticalScrollBar().value()
+
+        offset_x = old_pos.x() + old_scroll_x
+        offset_y = old_pos.y() + old_scroll_y
+
+        angle = event.angleDelta().y()
+        factor = 1.25 if angle > 0 else 0.8
+        new_scale = self.scale_factor * factor
+        new_scale = max(0.1, min(new_scale, 20))
+
+        if new_scale == self.scale_factor:
+            return
+
+        self.scale_factor = new_scale
+        self.repaint_scaled()
+
+        new_scroll_x = int(offset_x * factor - old_pos.x())
+        new_scroll_y = int(offset_y * factor - old_pos.y())
+
+        self.scroll_area.horizontalScrollBar().setValue(new_scroll_x)
+        self.scroll_area.verticalScrollBar().setValue(new_scroll_y)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = event.pos()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos and self.scroll_area:
+            diff = event.pos() - self._drag_pos
+            self.scroll_area.horizontalScrollBar().setValue(
+                self.scroll_area.horizontalScrollBar().value() - diff.x())
+            self.scroll_area.verticalScrollBar().setValue(
+                self.scroll_area.verticalScrollBar().value() - diff.y())
+            self._drag_pos = event.pos()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+
+    def repaint_scaled(self):
+        if self._pixmap:
+            scaled = self._pixmap.scaled(
+                self._pixmap.size() * self.scale_factor,
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+            super().setPixmap(scaled)
+
 
 class MosaicDialog(QDialog):
     def __init__(self, main_gui, parent=None):
@@ -68,10 +136,12 @@ class MosaicDialog(QDialog):
         self.pattern_combo = QComboBox(); self.pattern_combo.addItems(["Snake", "Raster"])
         self.fov_um_spin = QSpinBox(); self.fov_um_spin.setRange(1, 10000); self.fov_um_spin.setValue(100)
         self.repetitions_spin = QSpinBox(); self.repetitions_spin.setRange(1,100); self.repetitions_spin.setValue(1)
+        self.grid_checkbox = QCheckBox("Show Tile Grid"); self.grid_checkbox.setChecked(True)
         self.display_mosaic_checkbox = QCheckBox("Display Mosaic Live")
         self.display_mosaic_checkbox.setChecked(True)
         
-
+        
+        self.grid_checkbox.stateChanged.connect(self.update_display)
         self.rows_spin.valueChanged.connect(self.report_memory_estimate)
         self.cols_spin.valueChanged.connect(self.report_memory_estimate)
 
@@ -88,7 +158,8 @@ class MosaicDialog(QDialog):
         params_layout.addWidget(self.pattern_combo, 4, 1)
         params_layout.addWidget(QLabel("FOV Size (μm):"), 5, 0)
         params_layout.addWidget(self.fov_um_spin, 5, 1)
-        params_layout.addWidget(self.display_mosaic_checkbox, 6, 0, 1, 2)
+        params_layout.addWidget(self.grid_checkbox, 6, 0, 1, 2)
+        params_layout.addWidget(self.display_mosaic_checkbox, 7, 0, 1, 2)
 
         self.start_button = QPushButton("Start Mosaic Imaging")
         self.start_button.setAutoDefault(False)
@@ -134,17 +205,16 @@ class MosaicDialog(QDialog):
         self.sidebar_layout.addStretch()
         main_layout.addWidget(self.sidebar_widget)
 
-        self.scene = QGraphicsScene(self)
-        self.view = QGraphicsView(self.scene)
-        self.view.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
-        self.view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
-        
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.display_label = ZoomableLabel(scroll_area=self.scroll_area)
+        self.scroll_area.setWidget(self.display_label)
 
         self.status_label = QLabel("")
         self.status_label.setWordWrap(True)
 
         right_layout = QVBoxLayout()
-        right_layout.addWidget(self.view, stretch=1)
+        right_layout.addWidget(self.scroll_area)
         right_layout.addWidget(self.status_label)
 
         main_layout.addLayout(right_layout, stretch=1)
@@ -163,46 +233,90 @@ class MosaicDialog(QDialog):
         self.update_status("Mosaic acquisition cancelled.")
 
     def prepare_run(self):
-        self.scene.clear()
+        self.save_dir = self.save_folder_entry.text().strip()
+        if not self.save_dir:
+            self.update_status("Please select a folder to save results.")
+            return
+        os.makedirs(self.save_dir, exist_ok=True)
+        if self.save_tiles_checkbox.isChecked():
+            self.tile_dir = os.path.join(self.save_dir, "tiles")
+            os.makedirs(self.tile_dir, exist_ok=True)
+
+        self.cancelled = False
+        self._rows = self.rows_spin.value()
+        self._cols = self.cols_spin.value()
+        self._overlap = self.overlap_spin.value() / 100.0
+        self._repetitions = self.repetitions_spin.value()
+        self._pattern = self.pattern_combo.currentText()
+        self._fov_um = self.fov_um_spin.value()
+        self._af_enabled = self.af_enabled_checkbox.isChecked()
+        self._af_interval = self.af_every_n_spin.value()
+        self._af_max_steps = self.af_max_steps_spin.value()
+        self._af_stepsize = int(10 * self.af_stepsize_spin.value())
+        self._simulate = self.main_gui.simulation_mode.get()
+        self._save_averages = self.save_averages_checkbox.isChecked()
+        self._chan = self.main_gui.config["channel_names"][0]
+
+        try:
+            port = int(self.main_gui.prior_port_entry.get().strip())
+            x0, y0 = get_xy(port)
+            self._port, self._x0, self._y0 = port, x0, y0
+        except Exception as e:
+            self.update_status(f"Stage error: {e}")
+            return
 
         self.tile_w = self.main_gui.config['numsteps_x']
         self.tile_h = self.main_gui.config['numsteps_y']
-        overlap = self.overlap_spin.value() / 100.0
-        self.step_px = int(self.tile_w * (1 - overlap))
+        self.step_px = int(self.tile_w * (1 - self._overlap))
+        self.step_um = int(self._fov_um * (1 - self._overlap))
 
-        rows, cols = self.rows_spin.value(), self.cols_spin.value()
         self._tile_order = []
-        for i in range(rows):
-            cols_range = range(cols) if (i % 2 == 0) else reversed(range(cols))
-            for j in cols_range:
+        self._tile_colors = {}
+        for i in range(self._rows):
+            cols = range(self._cols) if (i % 2 == 0 or self._pattern == "Raster") else reversed(range(self._cols))
+            for j in cols:
                 dx_px = j * self.step_px
                 dy_px = i * self.step_px
-                self._tile_order.append((i, j, dx_px, dy_px))
+                dx_um = j * self.step_um
+                dy_um = i * self.step_um
+                self._tile_order.append((i, j, dx_um, dy_um, dx_px, dy_px))
+                self._tile_colors[(i, j)] = QColor(*[random.randint(180,255) for _ in range(3)], 220)
+
+        mosaic_h = self.step_px * (self._rows - 1) + self.tile_h
+        mosaic_w = self.step_px * (self._cols - 1) + self.tile_w
+        self.mosaic_rgb = np.zeros((mosaic_h, mosaic_w, 3), dtype=np.float32)
+        self.mosaic_weight = np.zeros((mosaic_h, mosaic_w), dtype=np.float32)
 
         self.worker = MosaicWorker(
             gui=self.main_gui,
+            port=self._port,
+            x0=self._x0,
+            y0=self._y0,
             tile_order=self._tile_order,
-            port=int(self.main_gui.prior_port_entry.get().strip()),
-            af_enabled=self.af_enabled_checkbox.isChecked(),
-            af_interval=self.af_every_n_spin.value(),
-            af_stepsize=self.af_stepsize_spin.value(),
-            af_max_steps=self.af_max_steps_spin.value(),
-            simulate=self.main_gui.simulation_mode.get(),
-            chan=self.main_gui.config["channel_names"][0],
-            repetitions=self.repetitions_spin.value()
+            tile_repetitions=self._repetitions,
+            af_enabled=self._af_enabled,
+            af_interval=self._af_interval,
+            af_stepsize=self._af_stepsize,
+            af_max_steps=self._af_max_steps,
+            simulate=self._simulate,
+            chan=self._chan
         )
+
         self.worker.tile_ready.connect(self.on_tile_ready)
         self.worker.finished.connect(self.on_mosaic_complete)
-        self.worker.error.connect(lambda msg: self.update_status(f"Error: {msg}"))
+        self.worker.error.connect(lambda msg: self.update_status(f"Mosaic error: {msg}"))
+        self.worker.status_update.connect(self.update_status)
+
         self.worker.start()
         self.update_status("Starting mosaic...")
 
     @pyqtSlot(int, int, int, int, object)
     def on_tile_ready(self, i, j, dx_px, dy_px, data):
         self.update_status(f"Acquired tile ({i+1},{j+1})...")
+
         if self.save_tiles_checkbox.isChecked():
             for ch, frame in enumerate(data):
-                Image.fromarray(frame).save(os.path.join(self.save_folder_entry.text(), f"tile_{i}_{j}_ch{ch}.tif"))
+                Image.fromarray(frame).save(os.path.join(self.tile_dir, f"tile_{i}_{j}_ch{ch}.tif"))
 
         tile_rgb = np.zeros((self.tile_h, self.tile_w, 3), dtype=np.float32)
         visibility = getattr(self.main_gui, 'image_visibility', [True]*len(data))
@@ -210,43 +324,95 @@ class MosaicDialog(QDialog):
         for ch, frame in enumerate(data):
             if ch < len(visibility) and visibility[ch]:
                 norm = frame.astype(np.float32)
-                for c in range(3):
-                    tile_rgb[..., c] += norm * (colors[ch][c]/255.0)
+                for c in range(3): tile_rgb[..., c] += norm * (colors[ch][c]/255.0)
         tile_rgb = np.clip(tile_rgb, 0, 1)
-
-        rgb8 = (tile_rgb * 255).astype(np.uint8)
-        h, w = rgb8.shape[:2]
-        image = QImage(rgb8.data, w, h, QImage.Format_RGB888)
-        pixmap = QPixmap.fromImage(image)
-
-        item = QGraphicsPixmapItem(pixmap)
-        item.setPos(dx_px, dy_px)
-        self.scene.addItem(item)
+        y1, y2 = dy_px, dy_px + self.tile_h
+        x1, x2 = dx_px, dx_px + self.tile_w
+        self.mosaic_rgb[y1:y2, x1:x2] += tile_rgb
+        self.mosaic_weight[y1:y2, x1:x2] += 1.0
+        self.update_display()
 
     @pyqtSlot()
     def on_mosaic_complete(self):
-        self.update_status("Mosaic complete.")
-        if self.save_stitched_checkbox.isChecked():
-            rect = self.scene.sceneRect()
-            out = QImage(int(rect.width()), int(rect.height()), QImage.Format_RGB888)
-            painter = QPainter(out)
-            self.scene.render(painter)
-            painter.end()
-            out.save(os.path.join(self.save_folder_entry.text(), "stitched_mosaic.tif"))
-        if self.save_metadata_checkbox.isChecked():
-            md = {
-                'rows': self.rows_spin.value(),
-                'cols': self.cols_spin.value(),
-                'overlap': self.overlap_spin.value(),
-                'order': [(i, j) for i,j,_,_ in self._tile_order]
-            }
-            with open(os.path.join(self.save_folder_entry.text(), 'mosaic_metadata.json'), 'w') as f:
-                json.dump(md, f, indent=2)
-        self.update_status("Saved mosaic and metadata.")
+        self.update_status("Mosaic acquisition complete.")
+        self.update_display()
+        self.save_mosaic()
+
+        if self._save_averages:
+            stats = self.worker.tile_statistics
+            fig, ax = plt.subplots(figsize=(6,4))
+            for curve in stats:
+                ax.plot(range(1, len(curve)+1), curve, alpha=0.5)
+
+            ax.set_xlabel('Repetition')
+            ax.set_ylabel('Average Intensity')
+            ax.set_title('Photobleaching Decay Curves')
+            fig.tight_layout()
+
+            outpath = os.path.join(self.save_dir, "decay_curves.png")
+            fig.savefig(outpath)
+            plt.close(fig)
+
+            self.update_status(f"Decay curves saved to:\n{outpath}")
+        
+
+    def update_display(self):
+        weight = np.maximum(self.mosaic_weight[..., np.newaxis], 1.0)
+        norm_rgb = self.mosaic_rgb / weight
+        rgb8 = np.clip(norm_rgb*255,0,255).astype(np.uint8)
+        h, w, _ = rgb8.shape
+        image = QImage(rgb8.data, w, h, QImage.Format_RGB888)
+        painter = QPainter(image)
+        if self.grid_checkbox.isChecked():
+            pen = QPen(); pen.setWidth(2); pen.setStyle(Qt.DashLine)
+            for (i,j), color in self._tile_colors.items():
+                pen.setColor(color)
+                painter.setPen(pen)
+                painter.drawRect(j*self.step_px, i*self.step_px, self.tile_w, self.tile_h)
+        painter.end()
+        pix = QPixmap.fromImage(image)
+        self.display_label.setPixmap(pix)
+        self.display_label.repaint_scaled()
 
     def browse_save_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Save Folder")
         if folder: self.save_folder_entry.setText(folder)
+
+    def save_mosaic(self):
+        if self.save_metadata_checkbox.isChecked():
+            md = {"rows":self._rows, "cols":self._cols, "overlap":self._overlap,
+                  "pattern":self._pattern, "fov_um":self._fov_um,
+                  "initial_position":(self._x0,self._y0),
+                  "tile_order":[(i,j) for i,j,*_ in self._tile_order]}
+            with open(os.path.join(self.save_dir,"mosaic_metadata.json"),"w") as f:
+                json.dump(md, f, indent=2)
+        if self.save_stitched_checkbox.isChecked():
+            weight = np.maximum(self.mosaic_weight[...,np.newaxis],1.0)
+            norm_rgb = self.mosaic_rgb / weight
+            img = np.clip(norm_rgb*255,0,255).astype(np.uint8)
+            Image.fromarray(img).save(os.path.join(self.save_dir,"stitched_mosaic.tif"))
+        self.update_status("Mosaic saved.")
+
+    def report_memory_estimate(self):
+        try:
+            tile_w, tile_h = self.main_gui.config['numsteps_x'], self.main_gui.config['numsteps_y']  
+            
+            rows = self.rows_spin.value()
+            cols = self.cols_spin.value()
+
+            mosaic_h = tile_h + (rows - 1) * int(tile_h * (1 - self.overlap_spin.value() / 100.0))
+            mosaic_w = tile_w + (cols - 1) * int(tile_w * (1 - self.overlap_spin.value() / 100.0))
+
+            bytes_needed = mosaic_h * mosaic_w * 3 * 4  # float32 RGB
+            approx_gb = bytes_needed / (1024**3)
+
+            if approx_gb > 0.2:
+                self.update_status(f"WARNING: expected memory usage is {approx_gb:.2f} GB. The program will probably crash.")
+            else:
+                self.update_status(f"Expected memory usage: {approx_gb:.2f} GB")
+
+        except Exception as e:
+            self.update_status(f"Memory estimate failed: {e}")
 
 class MosaicWorker(QThread):
     tile_ready = pyqtSignal(int, int, int, int, object)

@@ -1,53 +1,91 @@
+#!/usr/bin/env python3
+"""
+Standalone pathology viewer for large TIFF mosaics.
+Loads individual tile TIFFs and metadata JSON to render a zoomable, pannable view,
+with seamless blending in overlapping regions.
+"""
+import sys
 import os
 import json
+import glob
 import numpy as np
 from PIL import Image
-import matplotlib.pyplot as plt
+from PyQt5.QtWidgets import QApplication, QGraphicsView, QGraphicsScene, QGraphicsPixmapItem
+from PyQt5.QtGui import QPixmap, QImage
+from PyQt5.QtCore import Qt
 
-def stitch(base_dir, channel=0, threshold=230, output_filename="stitched_mosaic.tif"):
-    with open(os.path.join(base_dir, "mosaic_metadata.json"), "r") as f:
-        metadata = json.load(f)
+class PathologyViewer(QGraphicsView):
+    def __init__(self, metadata_path):
+        super().__init__()
+        self.setWindowTitle("Pathology Mosaic Viewer")
+        self.setDragMode(QGraphicsView.ScrollHandDrag)
+        self.setRenderHints(self.renderHints() | Qt.SmoothTransformation)
+        self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
 
-    rows = metadata["rows"]
-    cols = metadata["cols"]
-    overlap = metadata["overlap"]
-    tile_order = metadata["tile_order"]
+        self.scene = QGraphicsScene(self)
+        self.setScene(self.scene)
+        self.load_metadata(metadata_path)
+        self.build_canvas()
+        self.load_tiles_with_blending()
+        self.display_canvas()
+        self.showMaximized()
 
-    tile_dir = os.path.join(base_dir, "tiles")
-    sample_tile_path = os.path.join(tile_dir, f"tile_0_0_ch{channel}.tif")
-    sample_tile = np.array(Image.open(sample_tile_path))
-    tile_h, tile_w = sample_tile.shape
+    def load_metadata(self, metadata_path):
+        with open(metadata_path, 'r') as f:
+            md = json.load(f)
+        self.rows = md.get('rows')
+        self.cols = md.get('cols')
+        self.overlap = md.get('overlap', 0.0)
+        self.tile_order = md.get('tile_order', [])
+        self.meta_dir = os.path.dirname(os.path.abspath(metadata_path))
+        self.tile_dir = os.path.join(self.meta_dir, 'tiles')
+        first = self.tile_order[0]
+        sample_path = os.path.join(self.tile_dir, f"tile_{first[0]}_{first[1]}_ch0.tif")
+        im = Image.open(sample_path)
+        self.tile_w, self.tile_h = im.size
+        self.step_px = int(self.tile_w * (1 - self.overlap))
 
-    step_h = int(tile_h * (1 - overlap))
-    step_w = int(tile_w * (1 - overlap))
-    mosaic_h = step_h * (rows - 1) + tile_h
-    mosaic_w = step_w * (cols - 1) + tile_w
+    def build_canvas(self):
+        mosaic_w = self.step_px * (self.cols - 1) + self.tile_w
+        mosaic_h = self.step_px * (self.rows - 1) + self.tile_h
+        self.canvas_rgb = np.zeros((mosaic_h, mosaic_w, 3), dtype=np.float32)
+        self.weight_map = np.zeros((mosaic_h, mosaic_w), dtype=np.float32)
 
-    mosaic = np.zeros((mosaic_h, mosaic_w), dtype=np.float32)
-    weight = np.zeros((mosaic_h, mosaic_w), dtype=np.float32)
+    def load_tiles_with_blending(self):
+        for i, j in self.tile_order:
+            x = j * self.step_px
+            y = i * self.step_px
+            path = os.path.join(self.tile_dir, f"tile_{i}_{j}_ch0.tif")
+            if not os.path.exists(path):
+                continue
+            tile = np.array(Image.open(path)).astype(np.float32)
+            tile_rgb = np.stack([tile]*3, axis=-1) / 255.0
+            h, w = tile.shape
 
-    for i, j in tile_order:
-        tile_path = os.path.join(tile_dir, f"tile_{i}_{j}_ch{channel}.tif")
+            # Create a weight mask with raised cosine ramp in overlap
+            yy, xx = np.meshgrid(np.linspace(-1,1,h), np.linspace(-1,1,w), indexing='ij')
+            ramp = 0.5 * (1 + np.cos(np.pi * np.clip(np.maximum(np.abs(xx), np.abs(yy)), 0, 1)))
+            ramp = ramp.astype(np.float32)
 
-        tile = np.array(Image.open(tile_path)).astype(np.float32)
+            self.canvas_rgb[y:y+h, x:x+w, :] += tile_rgb * ramp[..., None]
+            self.weight_map[y:y+h, x:x+w] += ramp
 
-        # tile[tile > threshold] = 0.0
+    def display_canvas(self):
+        norm_weight = np.clip(self.weight_map, 1e-6, None)
+        blended = self.canvas_rgb / norm_weight[..., None]
+        rgb8 = (np.clip(blended, 0, 1) * 255).astype(np.uint8)
+        h, w = rgb8.shape[:2]
+        img = QImage(rgb8.data, w, h, 3 * w, QImage.Format_RGB888)
+        pix = QPixmap.fromImage(img)
+        self.scene.addPixmap(pix)
 
-        y1, x1 = i * step_h, j * step_w
-        y2, x2 = y1 + tile_h, x1 + tile_w
+    def wheelEvent(self, event):
+        factor = 1.25 if event.angleDelta().y() > 0 else 0.8
+        self.scale(factor, factor)
 
-        valid = tile > 0
-        mosaic[y1:y2, x1:x2] += tile * valid
-        weight[y1:y2, x1:x2] += valid.astype(np.float32)
-
-    nonzero = weight > 0
-    stitched = np.zeros_like(mosaic)
-    stitched[nonzero] = mosaic[nonzero] / weight[nonzero]
-
-    stitched_img = (np.clip(stitched, 0, 255)).astype(np.uint8)
-    plt.imshow(stitched_img)
-    plt.show()
-
-    Image.fromarray(stitched_img).save(os.path.join(base_dir, output_filename))
-
-stitch(r"C:\Users\Lab Admin\Box\(L2 Sensitive) zhan2017\Zhang lab data\Ishaan\seohee 1", channel=0)
+if __name__ == '__main__':
+    path = r"C:\Users\Lab Admin\Box\(L2 Sensitive) zhan2017\Zhang lab data\Ishaan\5-06-2025_mosaic2\mosaic_metadata.json"
+    app = QApplication(sys.argv)
+    viewer = PathologyViewer(path)
+    viewer.show()
+    sys.exit(app.exec_())
