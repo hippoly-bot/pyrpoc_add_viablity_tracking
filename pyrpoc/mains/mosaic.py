@@ -15,6 +15,48 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import pandas as pd
 
+class MosaicCanvas:
+    def __init__(self, tile_w, tile_h, step_px, rows, cols):
+        self.tile_w = tile_w
+        self.tile_h = tile_h
+        self.step_px = step_px
+        self.rows = rows
+        self.cols = cols
+
+        self.canvas_w = step_px * (cols - 1) + tile_w
+        self.canvas_h = step_px * (rows - 1) + tile_h
+
+        self.canvas_rgb = np.zeros((self.canvas_h, self.canvas_w, 3), dtype=np.float32)
+        self.weight_map = np.zeros((self.canvas_h, self.canvas_w), dtype=np.float32)
+
+        yy, xx = np.meshgrid(np.linspace(-1, 1, tile_h), np.linspace(-1, 1, tile_w), indexing='ij')
+        ramp = 0.5 * (1 + np.cos(np.pi * np.clip(np.maximum(np.abs(xx), np.abs(yy)), 0, 1)))
+        self.ramp = ramp.astype(np.float32)
+
+    def blend_tile(self, i, j, tile_rgb):
+        x = j * self.step_px
+        y = i * self.step_px
+        h, w = self.tile_h, self.tile_w
+
+        ramp = self.ramp[..., None]
+        self.canvas_rgb[y:y+h, x:x+w, :] += tile_rgb * ramp
+        self.weight_map[y:y+h, x:x+w] += self.ramp
+
+    def render_qimage(self):
+        norm_weight = np.clip(self.weight_map, 1e-6, None)[..., None]
+        blended = self.canvas_rgb / norm_weight
+        rgb8 = (np.clip(blended, 0, 1) * 255).astype(np.uint8)
+        h, w = rgb8.shape[:2]
+        return QImage(rgb8.data, w, h, 3 * w, QImage.Format_RGB888).copy()
+
+    def save_to_file(self, path):
+        norm_weight = np.clip(self.weight_map, 1e-6, None)[..., None]
+        blended = self.canvas_rgb / norm_weight
+        img = (np.clip(blended, 0, 1) * 255).astype(np.uint8)
+        Image.fromarray(img).save(path)
+
+
+
 class ZoomableLabel(QLabel):
     def __init__(self, scroll_area=None):
         super().__init__()
@@ -81,6 +123,41 @@ class ZoomableLabel(QLabel):
                 Qt.SmoothTransformation
             )
             super().setPixmap(scaled)
+
+class MosaicCanvas:
+    def __init__(self, tile_w, tile_h, step_px, rows, cols):
+        self.tile_w = tile_w
+        self.tile_h = tile_h
+        self.step_px = step_px
+        self.rows = rows
+        self.cols = cols
+
+        self.canvas_w = step_px * (cols - 1) + tile_w
+        self.canvas_h = step_px * (rows - 1) + tile_h
+
+        self.canvas_rgb = np.zeros((self.canvas_h, self.canvas_w, 3), dtype=np.float32)
+        self.weight_map = np.zeros((self.canvas_h, self.canvas_w), dtype=np.float32)
+
+        # Precomputed weight mask (cosine ramp)
+        yy, xx = np.meshgrid(np.linspace(-1, 1, tile_h), np.linspace(-1, 1, tile_w), indexing='ij')
+        ramp = 0.5 * (1 + np.cos(np.pi * np.clip(np.maximum(np.abs(xx), np.abs(yy)), 0, 1)))
+        self.ramp = ramp.astype(np.float32)
+
+    def blend_tile(self, i, j, tile_rgb):
+        x = j * self.step_px
+        y = i * self.step_px
+        h, w = self.tile_h, self.tile_w
+
+        ramp = self.ramp[..., None]
+        self.canvas_rgb[y:y+h, x:x+w, :] += tile_rgb * ramp
+        self.weight_map[y:y+h, x:x+w] += self.ramp
+
+    def render_qimage(self):
+        norm_weight = np.clip(self.weight_map, 1e-6, None)[..., None]
+        blended = self.canvas_rgb / norm_weight
+        rgb8 = (np.clip(blended, 0, 1) * 255).astype(np.uint8)
+        h, w = rgb8.shape[:2]
+        return QImage(rgb8.data, w, h, 3 * w, QImage.Format_RGB888).copy()
 
 
 class MosaicDialog(QDialog):
@@ -287,10 +364,7 @@ class MosaicDialog(QDialog):
                 self._tile_order.append((i, j, dx_um, dy_um, dx_px, dy_px))
                 self._tile_colors[(i, j)] = QColor(*[random.randint(180,255) for _ in range(3)], 220)
 
-        mosaic_h = self.step_px * (self._rows - 1) + self.tile_h
-        mosaic_w = self.step_px * (self._cols - 1) + self.tile_w
-        self.mosaic_rgb = np.zeros((mosaic_h, mosaic_w, 3), dtype=np.float32)
-        self.mosaic_weight = np.zeros((mosaic_h, mosaic_w), dtype=np.float32)
+        self.canvas = MosaicCanvas(self.tile_w, self.tile_h, self.step_px, self._rows, self._cols)
 
         self.worker = MosaicWorker(
             gui=self.main_gui,
@@ -315,6 +389,7 @@ class MosaicDialog(QDialog):
         self.worker.start()
         self.update_status("Starting mosaic...")
 
+    
     @pyqtSlot(int, int, int, int, object)
     def on_tile_ready(self, i, j, dx_px, dy_px, data):
         self.update_status(f"Acquired tile ({i+1},{j+1})...")
@@ -325,16 +400,15 @@ class MosaicDialog(QDialog):
 
         tile_rgb = np.zeros((self.tile_h, self.tile_w, 3), dtype=np.float32)
         visibility = getattr(self.main_gui, 'image_visibility', [True]*len(data))
-        colors = getattr(self.main_gui, 'image_colors', [(255,0,0),(0,255,0),(0,0,255)])
+        colors = getattr(self.main_gui, 'image_colors', [(255,0,0), (0,255,0), (0,0,255)])
         for ch, frame in enumerate(data):
             if ch < len(visibility) and visibility[ch]:
                 norm = frame.astype(np.float32)
-                for c in range(3): tile_rgb[..., c] += norm * (colors[ch][c]/255.0)
+                for c in range(3):
+                    tile_rgb[..., c] += norm * (colors[ch][c] / 255.0)
         tile_rgb = np.clip(tile_rgb, 0, 1)
-        y1, y2 = dy_px, dy_px + self.tile_h
-        x1, x2 = dx_px, dx_px + self.tile_w
-        self.mosaic_rgb[y1:y2, x1:x2] += tile_rgb
-        self.mosaic_weight[y1:y2, x1:x2] += 1.0
+
+        self.canvas.blend_tile(i, j, tile_rgb)
         self.update_display()
 
     @pyqtSlot()
@@ -368,22 +442,19 @@ class MosaicDialog(QDialog):
         
 
     def update_display(self):
-        weight = np.maximum(self.mosaic_weight[..., np.newaxis], 1.0)
-        norm_rgb = self.mosaic_rgb / weight
-        rgb8 = np.clip(norm_rgb*255,0,255).astype(np.uint8)
-        h, w, _ = rgb8.shape
-        image = QImage(rgb8.data, w, h, QImage.Format_RGB888)
+        image = self.canvas.render_qimage()
         painter = QPainter(image)
         if self.grid_checkbox.isChecked():
             pen = QPen(); pen.setWidth(2); pen.setStyle(Qt.DashLine)
-            for (i,j), color in self._tile_colors.items():
+            for (i, j), color in self._tile_colors.items():
                 pen.setColor(color)
                 painter.setPen(pen)
-                painter.drawRect(j*self.step_px, i*self.step_px, self.tile_w, self.tile_h)
+                painter.drawRect(j * self.step_px, i * self.step_px, self.tile_w, self.tile_h)
         painter.end()
         pix = QPixmap.fromImage(image)
         self.display_label.setPixmap(pix)
         self.display_label.repaint_scaled()
+
 
     def browse_save_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Save Folder")
@@ -391,17 +462,18 @@ class MosaicDialog(QDialog):
 
     def save_mosaic(self):
         if self.save_metadata_checkbox.isChecked():
-            md = {"rows":self._rows, "cols":self._cols, "overlap":self._overlap,
-                  "pattern":self._pattern, "fov_um":self._fov_um,
-                  "initial_position":(self._x0,self._y0),
-                  "tile_order":[(i,j) for i,j,*_ in self._tile_order]}
-            with open(os.path.join(self.save_dir,"mosaic_metadata.json"),"w") as f:
+            md = {
+                "rows": self._rows, "cols": self._cols, "overlap": self._overlap,
+                "pattern": self._pattern, "fov_um": self._fov_um,
+                "initial_position": (self._x0, self._y0),
+                "tile_order": [(i, j) for i, j, *_ in self._tile_order]
+            }
+            with open(os.path.join(self.save_dir, "mosaic_metadata.json"), "w") as f:
                 json.dump(md, f, indent=2)
+
         if self.save_stitched_checkbox.isChecked():
-            weight = np.maximum(self.mosaic_weight[...,np.newaxis],1.0)
-            norm_rgb = self.mosaic_rgb / weight
-            img = np.clip(norm_rgb*255,0,255).astype(np.uint8)
-            Image.fromarray(img).save(os.path.join(self.save_dir,"stitched_mosaic.tif"))
+            self.canvas.save_to_file(os.path.join(self.save_dir, "stitched_mosaic.tif"))
+
         self.update_status("Mosaic saved.")
 
     def report_memory_estimate(self):
