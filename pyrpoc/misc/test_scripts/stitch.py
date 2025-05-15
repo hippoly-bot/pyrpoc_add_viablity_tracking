@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Standalone pathology viewer for large TIFF mosaics.
-Loads individual tile TIFFs and metadata JSON to render a zoomable, pannable view,
-with seamless blending in overlapping regions.
-"""
 import sys
 import os
 import json
@@ -62,7 +56,6 @@ class PathologyViewer(QGraphicsView):
             tile_rgb = np.stack([tile]*3, axis=-1) / 255.0
             h, w = tile.shape
 
-            # Create a weight mask with raised cosine ramp in overlap
             yy, xx = np.meshgrid(np.linspace(-1,1,h), np.linspace(-1,1,w), indexing='ij')
             ramp = 0.5 * (1 + np.cos(np.pi * np.clip(np.maximum(np.abs(xx), np.abs(yy)), 0, 1)))
             ramp = ramp.astype(np.float32)
