@@ -21,7 +21,8 @@ dependencies = [
   "nidaqmx",   
   "pyvisa",      
   "zaber_motion",
-  "scikit-image"
+  "scikit-image",
+  "pandas"
 ]
 
 [project.scripts]

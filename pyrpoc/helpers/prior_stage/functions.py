@@ -79,7 +79,7 @@ def wait_for_motion():
 
         time.sleep(0.1)
 
-def auto_focus(gui, port: int, channel_name: str, step_size=5, max_steps=20, min_improvement=5.0, min_acceptance=30, min_start_metric=15.0):
+def auto_focus(gui, port: int, channel_name: str, step_size=5, max_steps=20, min_improvement=1, min_acceptance=30, min_start_metric=15.0):
     connect_prior(port)
     gui.simulation_mode.set(False)
     gui.acquiring = True
