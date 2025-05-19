@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from letters import generate_mask  # from [script name] import generate_mask
+from fully_active import generate_mask  # from [script name] import generate_mask
 
 def create_test_images():
     images = []
