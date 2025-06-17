@@ -23,6 +23,8 @@ from pyrpoc.mains.display import create_gray_red_cmap
 from pyrpoc.helpers.prior_stage import functions as prior
 from pyrpoc.mains.pyqt_rpoc import launch_pyqt_editor
 from pyrpoc.mains.mosaic import MosaicDialog
+from pyrpoc.mains.viability_setup import ThresholdSetupWindow
+
 
 def set_dark_theme(app):
     app.setStyle("Fusion")
@@ -117,6 +119,10 @@ class GUI:
         self.fixed_colorbar_vars = {}
         self.fixed_colorbar_widgets = {}
         self.grayred_cmap = create_gray_red_cmap()
+
+        # Cell viability initialization
+        self.live_avg_std = None
+        self.dead_avg_std = None
 
         style = ttk.Style()
         style.theme_use('clam')
@@ -562,10 +568,117 @@ class GUI:
 
         self.update_modulation_channels()
 
+        ###########################################################
+        ############## 7. Cell Viability Tracking #################
+        ###########################################################
+        def update_button_states(self):
+            if self.threshold_mode.get() == 3:
+                self.setup_live_btn.state(["!disabled"])
+                self.setup_dead_btn.state(["!disabled"])
+            else:
+                self.setup_live_btn.state(["disabled"])
+                self.setup_dead_btn.state(["disabled"])
 
+        self.via_pane = CollapsiblePane(
+            self.sidebar, text="Cell Viability Tracking", gui=self
+        )
+        self.via_pane.pack(fill="x", padx=10, pady=5)
 
+        self.via_frame = ttk.Frame(self.via_pane.container, padding=(8, 8))
+        self.via_frame.grid(row=0, column=0, sticky="nsew")
 
+        # threshold settings
+        self.threshold_setting_frame = ttk.LabelFrame(
+            self.via_frame, text="Threshold Settings"
+        )
+        self.threshold_setting_frame.grid(
+            row=2, column=0, columnspan=3, sticky="ew", pady=(4, 8)
+        )
+        self.threshold_mode = tk.IntVar(value=1)
+        self.threshold_mode.trace_add(
+            "write", lambda *args: update_button_states(self=self)
+        )
 
+        # Mode 1: Predefined two thresholds
+        self.predefined_option_button = ttk.Radiobutton(
+            self.threshold_setting_frame,
+            text="Predefined Thresholds",
+            variable=self.threshold_mode,
+            value=1,
+        )
+        self.predefined_low = tk.DoubleVar(value=0.2)
+        self.predefined_high = tk.DoubleVar(value=0.8)
+        self.predefined_low_entry = ttk.Entry(
+            self.threshold_setting_frame, textvariable=self.predefined_low, width=6
+        )
+        self.predefined_high_entry = ttk.Entry(
+            self.threshold_setting_frame, textvariable=self.predefined_high, width=6
+        )
+        self.predefined_option_button.grid(row=0, column=0, sticky="ew", padx=4, pady=2)
+        ttk.Label(self.threshold_setting_frame, text="Low:").grid(
+            row=0, column=1, padx=1
+        )
+        self.predefined_low_entry.grid(row=0, column=2)
+        ttk.Label(self.threshold_setting_frame, text="High:").grid(
+            row=0, column=3, padx=1
+        )
+        self.predefined_high_entry.grid(row=0, column=4)
+
+        # Mode 2: Percentage drop from frame 1 as threshold
+        self.percentage_option_button = ttk.Radiobutton(
+            self.threshold_setting_frame,
+            text="Percentage-drop Threshold",
+            variable=self.threshold_mode,
+            value=2,
+        )
+        self.percent_drop = tk.DoubleVar(value=30.0)
+        self.percent_drop_entry = ttk.Entry(
+            self.threshold_setting_frame, textvariable=self.percent_drop, width=6
+        )
+        self.percentage_option_button.grid(row=1, column=0, sticky="ew", padx=4, pady=2)
+        ttk.Label(self.threshold_setting_frame, text="Drop %:").grid(
+            row=1, column=1, padx=(4, 2)
+        )
+        self.percent_drop_entry.grid(row=1, column=2)
+
+        # Mode 3: Setup thresholds by experiment
+        self.experiment_option_button = ttk.Radiobutton(
+            self.threshold_setting_frame,
+            text="Experiment-based Threshold",
+            variable=self.threshold_mode,
+            value=3,
+        )
+        self.experiment_option_button.grid(row=2, column=0, sticky="ew", padx=5, pady=2)
+
+        self.setup_live_btn = ttk.Button(
+            self.threshold_setting_frame,
+            text="Setup Live Threshold",
+            command=self.setup_live,
+        )
+        self.setup_dead_btn = ttk.Button(
+            self.threshold_setting_frame,
+            text="Setup Dead Threshold",
+            command=self.setup_dead,
+        )
+
+        if self.live_avg_std is None:
+            self.live_avg_std = 0.0
+        if self.dead_avg_std is None:
+            self.dead_avg_std = 0.0
+
+        self.live_avg_label = ttk.Label(
+            self.threshold_setting_frame, text=f"Live Avg: {self.live_avg_std:.2f}"
+        )
+        self.dead_avg_label = ttk.Label(
+            self.threshold_setting_frame, text=f"Dead Avg: {self.dead_avg_std:.2f}"
+        )
+        self.setup_live_btn.grid(row=3, column=0, padx=8, pady=2)
+        self.live_avg_label.grid(row=3, column=1, columnspan=2, sticky="w")
+        self.setup_dead_btn.grid(row=4, column=0, padx=8, pady=2)
+        self.dead_avg_label.grid(row=4, column=1, columnspan=2, sticky="w")
+
+        # if user hasn't selected experiment mode, make setup buttons unclickable
+        update_button_states(self=self)
 
         ###########################################################
         ##################### DATA DISPLAY ########################
@@ -879,6 +992,42 @@ class GUI:
             raise ImportError("No function `generate_mask(image_data)` found.")
         return user_mask.generate_mask
 
+    ###########################################################
+    ################ CELL VIABILITY HANDELING #################
+    ###########################################################
+    def setup_live(self):
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication(sys.argv)
+            set_dark_theme(app)
+
+        win = ThresholdSetupWindow(mode="live", callback=self.receive_live_avg)
+        win.resize(1200, 800)
+        win.show()
+
+        if not QApplication.instance().startingUp():
+            app.exec_()
+
+    def setup_dead(self):
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication(sys.argv)
+            set_dark_theme(app)
+
+        win = ThresholdSetupWindow(mode="dead", callback=self.receive_dead_avg)
+        win.resize(1200, 800)
+        win.show()
+
+        if not QApplication.instance().startingUp():
+            app.exec_()
+
+    def receive_live_avg(self, avg_std):
+        self.live_avg = avg_std
+        self.live_avg_label.config(text=f"Live Avg: {avg_std:.3f}")
+
+    def receive_dead_avg(self, avg_std):
+        self.dead_avg = avg_std
+        self.dead_avg_label.config(text=f"Dead Avg: {avg_std:.3f}")
 
     ###########################################################
     #################### PARAMETER HANDLING ###################
