@@ -23,7 +23,7 @@ from pyrpoc.mains.display import create_gray_red_cmap
 from pyrpoc.helpers.prior_stage import functions as prior
 from pyrpoc.mains.pyqt_rpoc import launch_pyqt_editor
 from pyrpoc.mains.mosaic import MosaicDialog
-from pyrpoc.mains.viability_setup import ThresholdSetupWindow
+from pyrpoc.mains.viability_setup import ThresholdSetupWindow, RealTimeTrackingDialog
 
 
 def set_dark_theme(app):
@@ -679,6 +679,15 @@ class GUI:
 
         # if user hasn't selected experiment mode, make setup buttons unclickable
         update_button_states(self=self)
+        
+        self.real_time_tracking_button = ttk.Button(
+            self.via_frame, text="Open Real-Time Tracking",
+            command=lambda: self.launch_realtime_tracking_gui()
+        )
+        self.real_time_tracking_button.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        
+        
+        
 
         ###########################################################
         ##################### DATA DISPLAY ########################
@@ -1028,6 +1037,18 @@ class GUI:
     def receive_dead_avg(self, avg_std):
         self.dead_avg = avg_std
         self.dead_avg_label.config(text=f"Dead Avg: {avg_std:.3f}")
+        
+    def launch_realtime_tracking_gui(self):
+        def run():
+            app = QApplication.instance() or QApplication(sys.argv)
+            set_dark_theme(app)
+            dialog = RealTimeTrackingDialog(self)
+            dialog.show()
+            app.exec_()
+
+        threading.Thread(target=run, daemon=True).start()
+        
+
 
     ###########################################################
     #################### PARAMETER HANDLING ###################
