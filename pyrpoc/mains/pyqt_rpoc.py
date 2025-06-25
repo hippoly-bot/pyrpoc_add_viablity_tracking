@@ -629,7 +629,7 @@ class MainWindow(QMainWindow):
             return
 
         save_path, _ = QFileDialog.getSaveFileName(
-            self, 'Save Mask', '', 'PNG (*.png);;TIFF (*.tif);;All Files (*)'
+            self, 'Save Mask', '', 'PNG (*.png);;TIFF (*.tiff);;All Files (*)'
         )
         if not save_path:
             return

@@ -130,7 +130,7 @@ class ThresholdSetupWindow(QWidget):
 
     def load_image_stack(self):
         file_paths, _ = QFileDialog.getOpenFileNames(
-            self, "Select File(s)", "", "TIFF (*.tif);;Text (*.txt);;All Files (*)"
+            self, "Select File(s)", "", "TIFF (*.tiff);;Text (*.txt);;All Files (*)"
         )
         if not file_paths:
             return
@@ -144,7 +144,7 @@ class ThresholdSetupWindow(QWidget):
             self.image_stack = np.loadtxt(first_file, delimiter=",")
             if self.image_stack.ndim == 2:
                 self.image_stack = self.image_stack[np.newaxis, ...]
-        elif first_file.endswith(".tif"):  # Assume multiple TIFFs
+        elif first_file.endswith(".tiff"):  # Assume multiple TIFFs
             stack = []
             for path in file_paths:
                 img = tifffile.imread(path)
@@ -382,7 +382,7 @@ class ThresholdSetupWindow(QWidget):
 class DrawROIWindow(QDialog):
     roi_added = pyqtSignal(int, str, tuple, list)  # (index, name, color, polygon points)
 
-    def __init__(self, image, existing_rois, parent=None):
+    def __init__(self, image, existing_rois,  parent = None):
         super().__init__(parent)
         self.setWindowTitle("Manual ROI Drawing")
         self.setModal(False)
@@ -526,12 +526,17 @@ class RealTimeTrackingDialog(QDialog):
         create_roi_layout.addWidget(self.show_ROIs_info_list, 1, 0, 1, 2)
         
         self.preview_ROI_button = QPushButton("Preview ROIs")
-        self.preview_ROI_button.clicked.connect(self.preview_ROIs)
+        self.preview_ROI_button.clicked.connect(self.preview_ROIs_create)
         create_roi_layout.addWidget(self.preview_ROI_button, 2, 0, 1, 1)
         
         self.save_ROI_button = QPushButton("Save ROIs")
         self.save_ROI_button.clicked.connect(self.save_ROIs)
         create_roi_layout.addWidget(self.save_ROI_button, 2, 1, 1, 1)
+
+        self.use_ROI_button = QPushButton("Use ROIs")
+        self.use_ROI_button.clicked.connect(self.use_ROIs_in_create)
+        create_roi_layout.addWidget(self.use_ROI_button, 3, 0, 1, 2)
+
         # Load ROIs group
         self.setting_up_rois = False
         self.load_ROIs_group = QGroupBox("Load ROIs")
@@ -545,12 +550,19 @@ class RealTimeTrackingDialog(QDialog):
         self.load_ROIs_info_list.setHorizontalHeaderLabels(["ROI Index", "Name", "Pixel Count", "Color"])
         self.load_ROIs_info_list.cellChanged.connect(self.on_roi_color_changed)
         self.num_rois = 0  # Initialize number of ROIs
+        self.num_rois_create = 0
         self.roi_colors = {}  # Store colors for each ROI index
+        self.roi_colors_create = {}
         load_roi_layout.addWidget(self.load_ROIs_info_list, 1, 0, 1, 2)
         
         self.load_ROIs_preview_button = QPushButton("Preview Loaded ROIs")
         self.load_ROIs_preview_button.clicked.connect(self.preview_ROIs)
         load_roi_layout.addWidget(self.load_ROIs_preview_button, 2, 0, 1, 2)
+
+        self.use_ROI_load_button = QPushButton("Use ROIs")
+        self.use_ROI_load_button.clicked.connect(self.use_ROIs_in_load)
+        load_roi_layout.addWidget(self.use_ROI_load_button, 3, 0, 1, 2)
+        
         
         
         # Real-time tracking group
@@ -575,6 +587,7 @@ class RealTimeTrackingDialog(QDialog):
         
         # Initialize ROI mask
         self.roi_mask = np.zeros_like(self.main_gui.data[0], dtype=np.uint8) if self.main_gui.data else None
+        self.roi_mask_created = np.zeros_like(self.main_gui.data[0], dtype=np.uint8) if self.main_gui.data else None
         
         # Tracking setup
         self.tracking_delta_frames_label = QLabel("Tracking Δn (frames):")
@@ -656,7 +669,7 @@ class RealTimeTrackingDialog(QDialog):
 
 
     def prepare_roi_colors(self, num_rois):
-        for i in range(self.num_rois):
+        for i in range(num_rois):
             color_item = self.load_ROIs_info_list.item(i, 3)
             if color_item:
                 try:
@@ -701,7 +714,7 @@ class RealTimeTrackingDialog(QDialog):
         if folder: self.save_dir_edit.setText(folder)
     
     def handle_new_roi(self, index, name, color, points):
-        self.num_rois += 1
+        self.num_rois_create += 1
         row = self.show_ROIs_info_list.rowCount()
         self.show_ROIs_info_list.insertRow(row)
 
@@ -718,13 +731,12 @@ class RealTimeTrackingDialog(QDialog):
         color_item = self.show_ROIs_info_list.item(row,3)
         color_item.setBackground(QColor(*color))  
 
-        self.roi_colors[index] = color
-        self.roi_mask[mask == 1] = index
-
+        self.roi_colors_create[index] = color
+        self.roi_mask_created[mask == 1] = index
 
     def launch_manual_draw(self):
         # clear the ROI info region
-        self.show_ROIs_info_list.clear()
+        self.show_ROIs_info_list.setRowCount(0)
         # We only use the first channel (EB3 channel) ????????
         current_frame = self.main_gui.data[0]
         if current_frame is None:
@@ -736,9 +748,9 @@ class RealTimeTrackingDialog(QDialog):
         h, w = img.shape
         qimg = QImage(img.data, w, h, w, QImage.Format_Grayscale8).copy()
 
-        dialog = DrawROIWindow(qimg, existing_rois=[], parent=self)
-        dialog.roi_added.connect(self.handle_new_roi)
-        dialog.exec_()
+        self.drawing_dialog = DrawROIWindow(qimg, existing_rois=[], parent=self)
+        self.drawing_dialog.roi_added.connect(self.handle_new_roi)
+        self.drawing_dialog.exec_()
     
     def auto_fill_threshold(self):
         ############
@@ -753,16 +765,16 @@ class RealTimeTrackingDialog(QDialog):
         if not file_path:
             return
         if len(file_path) != 2:
-            self.status_label.setText("Please select two files(.txt and .tif) for one ROI.")
+            self.status_label.setText("Please select two files(.txt and .tiff) for one ROI.")
             return
         
         txt_file = file_path[0].lower()
         tiff_file = file_path[1].lower()
-        if txt_file.endswith(".txt") and tiff_file.endswith(".tif"):
+        if txt_file.endswith(".txt") and tiff_file.endswith(".tiff"):
             self.roi_info_path = txt_file
             self.roi_mask_path = tiff_file
             self.roi_mask = tifffile.imread(tiff_file)
-        elif tiff_file.endswith(".txt") and txt_file.endswith(".tif"):
+        elif tiff_file.endswith(".txt") and txt_file.endswith(".tiff"):
             txt_file = file_path[1].lower()
             tiff_file = file_path[0].lower()
             self.roi_info_path = txt_file
@@ -825,6 +837,7 @@ class RealTimeTrackingDialog(QDialog):
             return
     
     def save_ROIs(self):
+
         if self.save_dir_edit.text() == "":
             self.status_label.setText(f"Error: choose save dir first.")
             return
@@ -832,14 +845,14 @@ class RealTimeTrackingDialog(QDialog):
             os.makedirs(self.save_dir_edit.text(),exist_ok=True)       
         try:
             # save tiff
-            tiff_path = os.path.join(self.save_dir_edit.text(), "ROI_mask.tif")
-            tifffile.imwrite(tiff_path, self.roi_mask.astype(np.uint8))
+            tiff_path = os.path.join(self.save_dir_edit.text(), "ROI_mask.tiff")
+            tifffile.imwrite(tiff_path, self.roi_mask_created.astype(np.uint8))
             
             # save txt
             txt_path = os.path.join(self.save_dir_edit.text(), "ROI_info.txt")
             with open(txt_path, "w") as f:
-                f.write(f"{self.num_rois}\n")
-                for row in range(self.num_rois):
+                f.write(f"{self.num_rois_create}\n")
+                for row in range(self.num_rois_create):
                     index_item =  self.show_ROIs_info_list.item(row,0)
                     name_item = self.show_ROIs_info_list.item(row,1)
                     if index_item and name_item:
@@ -853,14 +866,36 @@ class RealTimeTrackingDialog(QDialog):
     
         return
     
+    def use_ROIs_in_create(self):
+        not_all_zero = np.any(self.roi_mask)
+        if not_all_zero:
+            self.roi_mask = self.roi_mask_created
+            self.status_label.setText(f"Warning: overwrite ROIs with created ones...")
+        else:
+            self.roi_mask = self.roi_mask_created
+            self.status_label.setText(f"Using created ROIs.")
+        
+    def use_ROIs_in_load(self):
+        not_all_zero = np.any(self.roi_mask_created)
+        if not_all_zero:
+            self.status_label.setText(f"Warning: overwrite ROIs with loaded ones...")
+        else:
+            self.status_label.setText(f"Using loaded ROIs.")
+
+    def preview_ROIs_create(self):
+        if self.roi_mask_created is None:
+            self.status_label.setText("Error: Get ROIs first.")
+            return
+        self.prepare_roi_colors(self.num_rois_create)
+        self.show_colored_roi_preview(self.roi_mask_created, self.roi_colors_create)   
+    
     def preview_ROIs(self):
         if self.roi_mask is None:
-            self.status_label.setText("Error: Load ROIs first.")
+            self.status_label.setText("Error: Get ROIs first.")
             return
-
         self.prepare_roi_colors(self.num_rois)
-        self.show_colored_roi_preview(self.roi_mask, self.roi_colors)    
-    
+        self.show_colored_roi_preview(self.roi_mask, self.roi_colors)
+        
     def update_status(self,text):
         QTimer.singleShot(0, lambda: self.status_label.setText(text))
     

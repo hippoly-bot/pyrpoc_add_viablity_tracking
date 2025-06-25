@@ -1015,6 +1015,7 @@ class GUI:
         win.show()
 
         if not QApplication.instance().startingUp():
+            print("qapplication is not starting up")
             app.exec_()
 
     def setup_dead(self):
@@ -1028,6 +1029,7 @@ class GUI:
         win.show()
 
         if not QApplication.instance().startingUp():
+            print("qapplication is not starting up")
             app.exec_()
 
     def receive_live_avg(self, avg_std):
