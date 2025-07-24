@@ -42,12 +42,19 @@ from pyrpoc.mains import acquisition
 from pyrpoc.helpers.galvo_funcs import Galvo
 from pathlib import Path
 import matplotlib.pyplot as plt
-from matplotlib import cm
+from datetime import datetime
+import json
+import pandas as pd
+from matplotlib import cm, colors
+from matplotlib.colorbar import ColorbarBase
+from matplotlib.backends.backend_agg import FigureCanvasAgg
 import numpy as np
 import tifffile
 import cv2
 import os
+import io
 import sys
+from PIL import Image, ImageDraw, ImageFont
 
 
 class ThresholdSetupWindow(QWidget):
@@ -477,9 +484,6 @@ class DrawROIWindow(QDialog):
     
 
 
-# class RealTimeTrackingCanvas:
-    
-
 class RealTimeTrackingDialog(QDialog):
     def __init__(self, main_gui):   
         super().__init__()
@@ -498,6 +502,7 @@ class RealTimeTrackingDialog(QDialog):
         self.sidebar_layout.setSpacing(10)
         
         self.save_group = QGroupBox("Save Options")
+        self.save_group.setFixedWidth(300)
         save_layout = QGridLayout(self.save_group)
         
         save_layout.addWidget(QLabel("Save Directory:"), 0, 0)
@@ -508,12 +513,23 @@ class RealTimeTrackingDialog(QDialog):
         browse_btn.clicked.connect(self.browse_save_folder)
         save_layout.addWidget(browse_btn, 0, 2)
         
-        self.save_parameter_checkbox = QCheckBox("Save Subtraction Parameters")
-        self.save_parameter_checkbox.setChecked(True)
-        save_layout.addWidget(self.save_parameter_checkbox, 1, 0, 1, 2)
+        self.save_images_checkbox = QCheckBox("Save Images")
+        self.save_images_checkbox.setChecked(True)
+        save_layout.addWidget(self.save_images_checkbox, 1, 0, 1, 2)
+        
+        self.save_subtraction_checkbox = QCheckBox("Save Subtraction STD Result")
+        self.save_subtraction_checkbox.setChecked(True)
+        save_layout.addWidget(self.save_subtraction_checkbox, 2, 0, 1, 2)
+        
+        self.save_binary_ROIs_checkbox = QCheckBox("Save binary ROIs")
+        self.save_binary_ROIs_checkbox.setChecked(True)
+        save_layout.addWidget(self.save_binary_ROIs_checkbox, 3, 0, 1, 2)
+    
+        
         
         # Create ROI group
         self.create_ROIs_group = QGroupBox("Create ROIs")
+        self.create_ROIs_group.setFixedWidth(300)
         create_roi_layout = QGridLayout(self.create_ROIs_group)
         
         self.create_ROIs_button = QPushButton("Manual Selection")
@@ -540,6 +556,7 @@ class RealTimeTrackingDialog(QDialog):
         # Load ROIs group
         self.setting_up_rois = False
         self.load_ROIs_group = QGroupBox("Load ROIs")
+        self.load_ROIs_group.setFixedWidth(300)
         load_roi_layout = QGridLayout(self.load_ROIs_group)
     
         self.load_ROIs_button = QPushButton("Load ROIs from File")
@@ -551,6 +568,7 @@ class RealTimeTrackingDialog(QDialog):
         self.load_ROIs_info_list.cellChanged.connect(self.on_roi_color_changed)
         self.num_rois = 0  # Initialize number of ROIs
         self.num_rois_create = 0
+        self.num_rois_used = 0
         self.roi_colors = {}  # Store colors for each ROI index
         self.roi_colors_create = {}
         load_roi_layout.addWidget(self.load_ROIs_info_list, 1, 0, 1, 2)
@@ -567,6 +585,7 @@ class RealTimeTrackingDialog(QDialog):
         
         # Real-time tracking group
         self.real_time_tracking_group = QGroupBox("Real-Time Tracking")
+        self.real_time_tracking_group.setFixedWidth(300)
         real_time_layout = QVBoxLayout(self.real_time_tracking_group)
         self.auto_fill_threshold_button = QPushButton("Auto Fill Thresholds")
         self.auto_fill_threshold_button.clicked.connect(self.auto_fill_threshold)
@@ -585,15 +604,21 @@ class RealTimeTrackingDialog(QDialog):
         real_time_layout.addWidget(self.high_threshold_label)
         real_time_layout.addWidget(self.high_threshold_spin)
         
+        self.low_threshold_value = 0
+        self.high_threshold_value = 0
+        self.drop_percentage = 0
+        self.roi_std_all = []
+        
         # Initialize ROI mask
         self.roi_mask = np.zeros_like(self.main_gui.data[0], dtype=np.uint8) if self.main_gui.data else None
         self.roi_mask_created = np.zeros_like(self.main_gui.data[0], dtype=np.uint8) if self.main_gui.data else None
+        self.roi_mask_used = np.zeros_like(self.main_gui.data[0], dtype=np.uint8) if self.main_gui.data else None
         
         # Tracking setup
         self.tracking_delta_frames_label = QLabel("Tracking Δn (frames):")
         self.tracking_delta_frames_spin = QSpinBox()
-        self.tracking_delta_frames_spin.setRange(1, 100)
-        self.tracking_delta_frames_spin.setValue(30)
+        self.tracking_delta_frames_spin.setRange(1, 50)
+        self.tracking_delta_frames_spin.setValue(5)
         real_time_layout.addWidget(self.tracking_delta_frames_label)
         real_time_layout.addWidget(self.tracking_delta_frames_spin)
         
@@ -607,6 +632,7 @@ class RealTimeTrackingDialog(QDialog):
         
         # Status label
         self.status_label = QLabel("Status: Ready")
+        self.status_label.setFixedWidth(300)
         self.status_label.setAlignment(Qt.AlignCenter)
         self.status_label.setStyleSheet("font-weight: bold; color: green;")
         real_time_layout.addWidget(self.status_label)
@@ -621,20 +647,30 @@ class RealTimeTrackingDialog(QDialog):
         # Graphics View
         self.display_scene = QGraphicsScene(self)
         self.display_view = QGraphicsView(self.display_scene)
+        self.display_view.setFixedWidth(600)
         self.display_view.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
         
         self.display_pixmap_item = QGraphicsPixmapItem()
         self.display_scene.addItem(self.display_pixmap_item)
 
-        # ColorBar
-        self.colorbar_label = QLabel()
-        self.colorbar_label.setFixedWidth(30)
-  
+        # Colorbar
+        self.colorbar_widget = QWidget()
+        self.colorbar_widget.setFixedWidth(80)  # Wider to accommodate labels
+        self.colorbar_widget.setMinimumHeight(300) 
+        
+        self.colorbar_layout = QVBoxLayout(self.colorbar_widget)
+        self.colorbar_layout.setContentsMargins(0, 0, 0, 0)
+        # Create initial empty colorbar
+        self.colorbar_layout.addStretch(1)
+        self.colorbar_fig = Figure(figsize=(0.8, 4))
+        self.colorbar_canvas = FigureCanvas(self.colorbar_fig)
+        self.colorbar_layout.addWidget(self.colorbar_canvas)
+        self.colorbar_layout.addStretch(1)
 
         # Display Layout
         display_layout = QHBoxLayout()
         display_layout.addWidget(self.display_view)
-        display_layout.addWidget(self.colorbar_label, alignment=Qt.AlignRight)
+        display_layout.addWidget(self.colorbar_widget, alignment=Qt.AlignRight)
 
         main_layout.addLayout(display_layout)
         main_layout.setStretch(0,1)
@@ -663,6 +699,7 @@ class RealTimeTrackingDialog(QDialog):
             assert all(0 <= v <= 255 for v in (r, g, b))
         except:
             self.status_label.setText(f"Invalid RGB at row {row}.")
+            self.status_label.setStyleSheet("font-weight: bold; color: red;")
             return
         self.roi_colors[row] = (r, g, b)  # update internal color map
         item.setBackground(QColor(r, g, b))
@@ -737,10 +774,12 @@ class RealTimeTrackingDialog(QDialog):
     def launch_manual_draw(self):
         # clear the ROI info region
         self.show_ROIs_info_list.setRowCount(0)
+        self.roi_mask_created = np.zeros_like(self.main_gui.data[0], dtype=np.uint8) if self.main_gui.data else None
         # We only use the first channel (EB3 channel) ????????
         current_frame = self.main_gui.data[0]
         if current_frame is None:
             self.status_label.setText("Error: No image in current channel.")
+            self.status_label.setStyleSheet("font-weight: bold; color: red;")
             return
         img = current_frame.astype(np.uint8)
         # rescale to 255 ######## ?? can be changed later about scaling
@@ -753,8 +792,42 @@ class RealTimeTrackingDialog(QDialog):
         self.drawing_dialog.exec_()
     
     def auto_fill_threshold(self):
-        ############
-        return
+        mode = self.main_gui.threshold_mode.get()
+        if mode == 1:
+            try:
+                self.low_threshold_value = float(self.main_gui.predefined_low_entry.get())
+                self.high_threshold_value = float(self.main_gui.predefined_high_entry.get())
+                self.low_threshold_spin.setValue(self.low_threshold_value)
+                self.high_threshold_spin.setValue(self.high_threshold_value)
+                self.status_label.setText("Using: Predefined threshold.")
+                self.status_label.setStyleSheet("font-weight: bold; color: green;")
+            except ValueError:
+                self.status_label.setText("Error:" + str(e))
+                self.status_label.setStyleSheet("font-weight: bold; color: red;")
+        elif mode == 2:
+            try:
+                self.drop_percentage = float(self.main_gui.percent_drop_entry.get())
+                self.low_threshold_spin.setValue(0)
+                self.high_threshold_spin.setValue(0)
+                self.status_label.setText("Using: Percentage-drop threshold, initiate with 0, awaiting to start...")
+                self.status_label.setStyleSheet("font-weight: bold; color: green;")
+            except ValueError as e:
+                self.status_label.setText("Error:" + str(e))
+                self.status_label.setStyleSheet("font-weight: bold; color: red;")
+        elif mode == 3:
+            try:
+                self.high_threshold_value = self.live_avg
+                self.low_threshold_value = self.dead_avg
+                self.low_threshold_spin.setValue(self.low_threshold_value)
+                self.high_threshold_spin.setValue(self.high_threshold_value)
+                self.status_label.setText("Using: Experiment-based threshold.")
+                self.status_label.setStyleSheet("font-weight: bold; color: green;")
+            except ValueError:
+                self.status_label.setText("Error:" + str(e))
+                self.status_label.setStyleSheet("font-weight: bold; color: red;")
+        else:
+            return
+        
 
     def load_ROIs_from_files(self):
         # all files allowed
@@ -766,6 +839,7 @@ class RealTimeTrackingDialog(QDialog):
             return
         if len(file_path) != 2:
             self.status_label.setText("Please select two files(.txt and .tiff) for one ROI.")
+            self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
             return
         
         txt_file = file_path[0].lower()
@@ -782,6 +856,7 @@ class RealTimeTrackingDialog(QDialog):
             self.roi_mask = tifffile.imread(tiff_file)
         else:
             self.status_label.setText("Please select a valid text file and a TIFF file.")
+            self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
             return
         
         # ------------------2. Load ROI info into table and count pixels of each ROIs-------------------
@@ -795,10 +870,12 @@ class RealTimeTrackingDialog(QDialog):
                 lines = f.readlines()
             if not lines:
                 self.status_label.setText("Error: .txt file is empty.")
+                self.status_label.setStyleSheet("font-weight: bold; color: red;")
                 return
             self.num_rois = int(lines[0].strip()) # First line should contain the number of ROIs
             if self.num_rois != len(lines) - 1: 
                 self.status_label.setText("Error: Number of ROIs does not match the file content.")
+                self.status_label.setStyleSheet("font-weight: bold; color: red;")
                 return
             self.load_ROIs_info_list.setRowCount(self.num_rois)
             
@@ -830,16 +907,19 @@ class RealTimeTrackingDialog(QDialog):
 
             except Exception as e:
                 self.status_label.setText(f"Error loading ROIs: {str(e)}")
+                self.status_label.setStyleSheet("font-weight: bold; color: red;")
                 return
                 
         except Exception as e:
             self.status_label.setText(f"Error reading ROI info file: {str(e)}")
+            self.status_label.setStyleSheet("font-weight: bold; color: red;")
             return
     
     def save_ROIs(self):
 
         if self.save_dir_edit.text() == "":
-            self.status_label.setText(f"Error: choose save dir first.")
+            self.status_label.setText(f"Choose save dir first.")
+            self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
             return
         else:
             os.makedirs(self.save_dir_edit.text(),exist_ok=True)       
@@ -861,53 +941,105 @@ class RealTimeTrackingDialog(QDialog):
                         f.write(f"{index},{name}\n")
             
             self.status_label.setText(f"Saved ROIs mask and info.")
+            self.status_label.setStyleSheet("font-weight: bold; color: green;")
         except Exception as e:
             self.status_label.setText(f"Error saving ROIs mask and info.")
+            self.status_label.setStyleSheet("font-weight: bold; color: red;")
     
         return
     
     def use_ROIs_in_create(self):
-        not_all_zero = np.any(self.roi_mask)
-        if not_all_zero:
-            self.roi_mask = self.roi_mask_created
+        not_all_zero_load = np.any(self.roi_mask)
+        not_all_zero_create = np.any(self.roi_mask_created)
+        if self.roi_mask_created is None or not not_all_zero_create:
+            self.status_label.setText("Notice: Get ROIs first.")
+            self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
+            return
+        elif not_all_zero_load:
+            self.roi_mask_used = self.roi_mask_created
+            self.num_rois_used = self.num_rois_create
             self.status_label.setText(f"Warning: overwrite ROIs with created ones...")
+            self.status_label.setStyleSheet("font-weight: bold; color: green;")
         else:
-            self.roi_mask = self.roi_mask_created
+            self.roi_mask_used = self.roi_mask_created
+            self.num_rois_used = self.num_rois_create
             self.status_label.setText(f"Using created ROIs.")
+            self.status_label.setStyleSheet("font-weight: bold; color: green;")
         
     def use_ROIs_in_load(self):
-        not_all_zero = np.any(self.roi_mask_created)
-        if not_all_zero:
+        not_all_zero_create = np.any(self.roi_mask_created)
+        not_all_zero_load = np.any(self.roi_mask)
+        if self.roi_mask is None or not not_all_zero_load:
+            self.status_label.setText("Notice: Get ROIs first.")
+            self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
+            return
+        elif not_all_zero_create:
+            self.roi_mask_used = self.roi_mask
+            self.num_rois_used = self.num_rois
             self.status_label.setText(f"Warning: overwrite ROIs with loaded ones...")
+            self.status_label.setStyleSheet("font-weight: bold; color: green;")
         else:
+            self.roi_mask_used = self.roi_mask
+            self.num_rois_used = self.num_rois
             self.status_label.setText(f"Using loaded ROIs.")
+            self.status_label.setStyleSheet("font-weight: bold; color: green;")
 
     def preview_ROIs_create(self):
+        not_all_zero = np.any(self.roi_mask_created)
         if self.roi_mask_created is None:
-            self.status_label.setText("Error: Get ROIs first.")
+            self.status_label.setText("Notice: Get ROIs first.")
+            self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
             return
-        self.prepare_roi_colors(self.num_rois_create)
-        self.show_colored_roi_preview(self.roi_mask_created, self.roi_colors_create)   
+        elif not_all_zero:
+            self.prepare_roi_colors(self.num_rois_create)
+            self.show_colored_roi_preview(self.roi_mask_created, self.roi_colors_create)   
+        else:
+            self.status_label.setText("Notice: Get ROIs first.")
+            self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
+            return
     
     def preview_ROIs(self):
+        not_all_zero = np.any(self.roi_mask)
         if self.roi_mask is None:
-            self.status_label.setText("Error: Get ROIs first.")
+            self.status_label.setText("Notice: Get ROIs first.")
+            self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
             return
-        self.prepare_roi_colors(self.num_rois)
-        self.show_colored_roi_preview(self.roi_mask, self.roi_colors)
+        elif not_all_zero:
+            self.prepare_roi_colors(self.num_rois)
+            self.show_colored_roi_preview(self.roi_mask, self.roi_colors)
+        else:
+            self.status_label.setText("Notice: Get ROIs first.")
+            self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
+            return
         
     def update_status(self,text):
         QTimer.singleShot(0, lambda: self.status_label.setText(text))
+        self.status_label.setStyleSheet("font-weight: bold; color: green;")
     
     def prepare_run(self):
         self.low_threshold = self.low_threshold_spin.value()
         self.high_threshold = self.high_threshold_spin.value()
         self.update_colorbar(self.high_threshold, self.low_threshold)
+        self.roi_std_all = [[] for _ in range(self.num_rois_used)]  
         
+        # Read and store checkbox states
+        self.save_data = self.save_images_checkbox.isChecked()
+        self.save_subtraction = self.save_subtraction_checkbox.isChecked()
+        self.save_binary_ROIs = self.save_binary_ROIs_checkbox.isChecked()
+        
+        if not self.save_data and not self.save_subtraction and not self.save_binary_ROIs:
+            self.status_label.setText("Warning: Not saving anything.")
+            self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
+        else:
+            if self.save_dir_edit.text() == "":
+                self.status_label.setText(f"Warning: Choose save dir first or uncheck savebox.")
+                self.status_label.setStyleSheet("font-weight: bold; color: yellow;")
+                return
+            
         self.worker = RealTimeTrackingWorker(self.main_gui, self.tracking_delta_frames_spin.value())
         self.worker.error.connect(lambda msg: self.update_status(f"Viability Tracking Error: {msg}"))
         self.worker.status_update.connect(self.update_status)
-        self.finished.connect(self.on_tracking_finished)
+        self.worker.finished.connect(self.on_tracking_finished)
         self.worker.frame_ready.connect(self.on_frame_ready)
         
         self.start_tracking_button.setEnabled(False)
@@ -918,12 +1050,12 @@ class RealTimeTrackingDialog(QDialog):
     
     def stop_tracking(self):
         self.status_label.setText("Status: Stopped.")
+        self.status_label.setStyleSheet("font-weight: bold; color: green;")
         if hasattr(self, 'worker') and self.worker is not None:
             self.worker.running = False
-            self.worker.wait(2000)
+            self.worker.wait(500)
         self.start_tracking_button.setEnabled(True)
         self.stop_tracking_button.setEnabled(False)
-        # pop up some report !!!!
         
         return
 
@@ -931,9 +1063,8 @@ class RealTimeTrackingDialog(QDialog):
         """
         Combines grayscale image and RGBA overlay, then updates the display pixmap.
         """
-        # Normalize grayscale frame to 0–255
-        norm_raw = np.clip((raw_frame - raw_frame.min()) / (raw_frame.max() - raw_frame.min() + 1e-8), 0, 1)
-        gray_img = (norm_raw * 255).astype(np.uint8)
+        # Normalize grayscale frame 0-1 to 0–255
+        gray_img = (raw_frame * 255).astype(np.uint8)
         gray_rgb = np.stack([gray_img] * 3, axis=-1)  # Convert to RGB shape (H, W, 3)
 
         # Blend overlay
@@ -953,56 +1084,148 @@ class RealTimeTrackingDialog(QDialog):
         self.display_pixmap_item.setOffset(0, 0)
 
     def update_colorbar(self, high_thresh, low_thresh):
+        """Update colorbar with dark theme"""
+        # Calculate range with mercy margin
         mercy_margin = 0.3 * (high_thresh - low_thresh)
-        self.color_min = low_thresh - mercy_margin
-        self.color_max = high_thresh + mercy_margin
-
-        # Create unnormalized range (actual std values)
-        raw_values = np.linspace(self.color_min, self.color_max, 256)
-
-        # Normalize to [0,1] for colormap
-        norm = (raw_values - self.color_min) / (self.color_max - self.color_min)
-        norm = np.clip(norm, 0, 1)  # safety
-
-        # Get RGBA values
-        rgba = (cm.jet(norm)[:, :3] * 255).astype(np.uint8)  # (256, 3)
-
-        # Stack to make a vertical color bar
-        width = 20
-        bar = np.tile(rgba[:, np.newaxis, :], (1, width, 1))  # (256, 20, 3)
-        bar = np.ascontiguousarray(bar)
-
-        # Convert to QImage and show
-        img = QImage(bar.data, width, 256, width * 3, QImage.Format_RGB888)
-        pixmap = QPixmap.fromImage(img)
-        self.colorbar_label.setPixmap(pixmap)
-
-
+        vmin = max(0, low_thresh - mercy_margin)  # Don't go below 0
+        vmax = high_thresh + mercy_margin
         
-    
+        # Clear previous figure
+        self.colorbar_fig.clear()
+        
+        # Set dark background for the figure
+        self.colorbar_fig.patch.set_facecolor('#2e2e2e')  # Dark gray background
+        
+        # Create new colorbar
+        ax = self.colorbar_fig.add_axes([0.05, 0.2, 0.05, 0.5])  # [left, bottom, width, height]
+        
+        # Set dark theme for the axes
+        ax.set_facecolor('#2e2e2e')  # Match figure background
+        ax.tick_params(axis='both', colors='white')  # White tick labels
+        for spine in ax.spines.values():
+            spine.set_edgecolor('white')  # White borders
+        
+        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+        cmap = plt.get_cmap('seismic')
+        cmap.set_extremes(under = 'darkblue', over = "darkred" )
+        cb = ColorbarBase(ax, cmap=cmap, norm=norm, orientation='vertical')
+        
+        # Set ticks and labels with white color
+        num_ticks = 5
+        tick_values = np.linspace(vmin, vmax, num_ticks)
+        tick_labels = [f"{val:.2f}" for val in tick_values]
+        cb.set_ticks(tick_values)
+        cb.set_ticklabels(tick_labels)
+        cb.set_label('STD Value', rotation=270, labelpad=15, color='white')
+        
+        # Set colorbar label and ticks to white
+        cb.ax.yaxis.set_tick_params(color='white')
+        plt.setp(plt.getp(cb.ax.axes, 'yticklabels'), color='white')
+        
+        # Redraw
+        self.colorbar_canvas.draw()
+        
+        # mercy_margin = 0.3 * (high_thresh - low_thresh)
+        # self.color_min = low_thresh - mercy_margin
+        # self.color_max = high_thresh + mercy_margin
 
+        # # Create unnormalized range (actual std values)
+        # raw_values = np.linspace(self.color_min, self.color_max, 256)
+
+        # # Normalize to [0,1] for colormap
+        # norm = (raw_values - self.color_min) / (self.color_max - self.color_min)
+        # norm = np.clip(norm, 0, 1)  # safety
+
+        # # Get RGBA values
+        # rgba = (cm.jet(norm)[:, :3] * 255).astype(np.uint8)  # (256, 3)
+
+        # # Stack to make a vertical color bar
+        # width = 20
+        # bar = np.tile(rgba[:, np.newaxis, :], (1, width, 1))  # (256, 20, 3)
+        # bar = np.ascontiguousarray(bar)
+
+        # # Convert to QImage and show
+        # img = QImage(bar.data, width, 256, width * 3, QImage.Format_RGB888)
+        # pixmap = QPixmap.fromImage(img)
+        # self.colorbar_widget.setPixmap(pixmap)
+
+
+    def _add_std_text(self, text_overlay, mask, std_value):
+        """Add orange text label at ROI centroid using PIL"""
+        # Find centroid coordinates
+        y, x = np.where(mask)
+        if len(x) == 0:
+            return
+            
+        cx, cy = int(np.mean(x)), int(np.mean(y))
+        
+        # Create PIL image and drawing context
+        img_pil = Image.fromarray(text_overlay)
+        draw = ImageDraw.Draw(img_pil)
+        
+        # Try to load font (fallback to default if needed)
+        try:
+            font = ImageFont.truetype("arial.ttf", 14)
+        except:
+            try:
+                font = ImageFont.truetype("LiberationSans-Regular.ttf", 14)
+            except:
+                font = ImageFont.load_default()
+        
+        # Format text and calculate dimensions
+        text = f"{std_value:.2f}"
+        text_width = draw.textlength(text, font=font)  # Returns single float value
+        text_height = font.size  # Get approximate height from font
+        
+        # Calculate position (centered)
+        text_x = cx - text_width//2
+        text_y = cy - text_height//2
+        
+        # Draw orange text (RGB: 255,165,0)
+        draw.text((text_x, text_y), text, font=font, fill=(255, 165, 0, 255))
+        
+        # Update the numpy array
+        text_overlay[:] = np.array(img_pil)
+        
+    # alpha is the transparency of the ROI on images
     def generate_overlay_from_std(self, roi_mask, subtracted_frame, low_thresh, high_thresh, colormap=cm.jet, alpha=0.5):
         """
         Generate RGBA overlay from ROI mask and subtracted image using STD and colormap.
         """
         h, w = roi_mask.shape
         overlay = np.zeros((h, w, 4), dtype=np.uint8)
+        text_overlay = np.zeros((h, w, 4), dtype=np.uint8)
         
         # set mercy margin to accept out of threshold value
-        mercy_margin = 0.3 *(high_thresh - low_thresh)
-        color_min = low_thresh - mercy_margin
+        mercy_margin = 0.2 *(high_thresh - low_thresh)
+        color_min = max(0,low_thresh - mercy_margin)
         color_max = high_thresh + mercy_margin
         
+        dark_red = np.array([139,0,0])
+        dark_blue = np.array([0,0,139])
         for roi_id in np.unique(roi_mask):
             if roi_id == 0:
                 continue
             mask = roi_mask == roi_id
             roi_std = np.std(subtracted_frame[mask])
+            self.roi_std_all[roi_id - 1].append(roi_std)  # Store std for this ROI
             
-            norm = np.clip((roi_std - color_min) / (color_max - color_min), 0, 1)
-            r, g, b, _ = colormap(norm)
-            overlay[mask] = [int(r * 255), int(g * 255), int(b * 255), int(alpha * 255)]
-
+            # check if it's over/above high/low threshold
+            if roi_std > color_max:
+                overlay[mask] = [*dark_red, int(alpha * 255)]
+            elif roi_std < color_min:
+                overlay[mask] = [*dark_blue, int(alpha * 255)]
+            else:
+                # Within range - use colormap
+                norm = (roi_std - color_min) / (color_max - color_min)
+                norm = np.clip(norm, 0, 1)  # Safety clamp
+                cmap = plt.get_cmap('seismic')
+                r, g, b, _ = cmap(norm)
+                overlay[mask] = [int(r * 255), int(g * 255), int(b * 255), int(alpha * 255)]
+            self._add_std_text(text_overlay, mask, roi_std)
+        # Combine overlays (text on top)
+        text_mask = text_overlay[..., 3] > 0
+        overlay[text_mask] = text_overlay[text_mask]
         return overlay
     
     
@@ -1011,18 +1234,88 @@ class RealTimeTrackingDialog(QDialog):
         # create Qimage, canvas
         if data is None:
             return
+        # adding for save images
+        if self.save_data:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+            save_path = os.path.join(self.save_dir_edit.text(), f"{timestamp}-original_data.txt")
+            with open(save_path, "a") as f:
+                np.savetxt(f, data, fmt="%.6f",delimiter="\t")
+
         if subtracted_frame is None:
             # just show the original data
             self.update_display_image(data, None)
         else:  
-            overlay_array = self.generate_overlay_from_std(self.roi_mask, subtracted_frame, self.low_threshold, self.high_threshold, alpha = 0.5)
+            overlay_array = self.generate_overlay_from_std(self.roi_mask_used, subtracted_frame, self.low_threshold, self.high_threshold, alpha = 0.5)
             self.update_display_image(data, overlay_array)
         
+        
+    
+    def save_roi_std_to_file(self, save_path):
+        """
+        Save self.roi_std_all to CSV with each ROI as a column.
+        Each column header is 'ROI_{id}'.
+        """
+        # Pad lists to equal length
+        max_len = max(len(lst) for lst in self.roi_std_all)
+        padded_data = [lst + [np.nan] * (max_len - len(lst)) for lst in self.roi_std_all]
+
+        # Create DataFrame
+        df = pd.DataFrame(
+            {f"ROI_{i+1}": padded_data[i] for i in range(len(padded_data))}
+        )
+
+        # Save
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        df.to_csv(save_path, index=False, float_format="%.6f")  # or .txt if preferred
+    
+    def save_ROIs_to_binary_mask(self, save_path):
+        """
+        Save the binary mask where any non-zero value in self.roi_mask_used becomes 255 (ROI),
+        and 0 stays as background.
+        """
+        if self.roi_mask_used is None:
+            print("No ROI mask to save.")
+            return
+
+        # save_path = os.path.join(self.save_dir_edit.text(), "binary_mask_all_ROIs.tif")
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        binary_mask = (self.roi_mask_used != 0).astype(np.uint8) * 255  # ROI pixels → 255, background → 0
+        img = Image.fromarray(binary_mask)
+        img.save(save_path)
+
         
     @pyqtSlot()
     def on_tracking_finished(self):
         self.update_status("Viability Tracking finished.")
-        # save to file logic !!!!!! 
+        print("tracking_finished_emit_Check")
+
+        # Create save directory
+        save_dir = self.save_dir_edit.text().strip()
+        if not save_dir:
+            self.update_status("Finished. No save directory selected. Skipping save.")
+            return
+
+        os.makedirs(save_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+            
+        # Save ROI std data
+        if self.save_subtraction:
+            std_data_path = os.path.join(save_dir, f"{timestamp}-roi_std_data.csv")
+            self.save_roi_std_to_file(std_data_path)
+            self.update_status(f"Saved ROI STD data to {std_data_path}")
+
+        # Save ROI binary image
+        if self.save_binary_ROIs:
+            ROIs_binary_mask_path =  os.path.join(save_dir, f"{timestamp}-roi_binary_mask.tiff")
+            self.save_ROIs_to_binary_mask(ROIs_binary_mask_path)
+
+
+        # Reset UI
+        self.start_tracking_button.setEnabled(True)
+        self.stop_tracking_button.setEnabled(False)
+        
+        
         
         
         
@@ -1073,7 +1366,7 @@ class RealTimeTrackingWorker(QThread):
                 if len(self.frames)>100:
                     self.frames.pop(0)
             
-                self.finished.emit()
+            self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
         
