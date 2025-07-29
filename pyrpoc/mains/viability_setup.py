@@ -1106,8 +1106,8 @@ class RealTimeTrackingDialog(QDialog):
             spine.set_edgecolor('white')  # White borders
         
         norm = colors.Normalize(vmin=vmin, vmax=vmax)
-        cmap = plt.get_cmap('seismic')
-        cmap.set_extremes(under = 'darkblue', over = "darkred" )
+        cmap = plt.get_cmap('RdYlGn')
+        cmap.set_extremes(under = 'darkred', over = "darkgreen" )
         cb = ColorbarBase(ax, cmap=cmap, norm=norm, orientation='vertical')
         
         # Set ticks and labels with white color
@@ -1202,7 +1202,7 @@ class RealTimeTrackingDialog(QDialog):
         color_max = high_thresh + mercy_margin
         
         dark_red = np.array([139,0,0])
-        dark_blue = np.array([0,0,139])
+        dark_green = np.array([0, 100, 0])
         for roi_id in np.unique(roi_mask):
             if roi_id == 0:
                 continue
@@ -1212,14 +1212,14 @@ class RealTimeTrackingDialog(QDialog):
             
             # check if it's over/above high/low threshold
             if roi_std > color_max:
-                overlay[mask] = [*dark_red, int(alpha * 255)]
+                overlay[mask] = [*dark_green, int(alpha * 255)]
             elif roi_std < color_min:
-                overlay[mask] = [*dark_blue, int(alpha * 255)]
+                overlay[mask] = [*dark_red, int(alpha * 255)]
             else:
                 # Within range - use colormap
                 norm = (roi_std - color_min) / (color_max - color_min)
                 norm = np.clip(norm, 0, 1)  # Safety clamp
-                cmap = plt.get_cmap('seismic')
+                cmap = plt.get_cmap('RdYlGn')
                 r, g, b, _ = cmap(norm)
                 overlay[mask] = [int(r * 255), int(g * 255), int(b * 255), int(alpha * 255)]
             self._add_std_text(text_overlay, mask, roi_std)
