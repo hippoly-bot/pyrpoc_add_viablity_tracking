@@ -652,6 +652,7 @@ class RealTimeTrackingDialog(QDialog):
         
         self.display_pixmap_item = QGraphicsPixmapItem()
         self.display_scene.addItem(self.display_pixmap_item)
+        self.update_display_image(self.main_gui.data[0].astype(np.float32),None)
 
         # Colorbar
         self.colorbar_widget = QWidget()
@@ -781,11 +782,13 @@ class RealTimeTrackingDialog(QDialog):
             self.status_label.setText("Error: No image in current channel.")
             self.status_label.setStyleSheet("font-weight: bold; color: red;")
             return
-        img = current_frame.astype(np.uint8)
-        # rescale to 255 ######## ?? can be changed later about scaling
-        img = img*255
+        # normalize the image to [0, 1] range
+        img = current_frame.astype(np.float32)
+        img = (img - np.min(img)) / (np.max(img) - np.min(img) + 1e-8)  # avoid division by zero
         h, w = img.shape
-        qimg = QImage(img.data, w, h, w, QImage.Format_Grayscale8).copy()
+        gray_img = (img * 255).astype(np.uint8)
+        gray_rgb = np.stack([gray_img] * 3, axis=-1)  # Convert to RGB shape (H, W, 3)
+        qimg = QImage(gray_rgb.data, w, h, 3 * w, QImage.Format_RGB888)
 
         self.drawing_dialog = DrawROIWindow(qimg, existing_rois=[], parent=self)
         self.drawing_dialog.roi_added.connect(self.handle_new_roi)
@@ -1063,7 +1066,8 @@ class RealTimeTrackingDialog(QDialog):
         """
         Combines grayscale image and RGBA overlay, then updates the display pixmap.
         """
-        # Normalize grayscale frame 0-1 to 0–255
+        # Normalize grayscale frame  to 0–255
+        raw_frame = (raw_frame - np.min(raw_frame)) / (np.max(raw_frame) - np.min(raw_frame) + 1e-8)
         gray_img = (raw_frame * 255).astype(np.uint8)
         gray_rgb = np.stack([gray_img] * 3, axis=-1)  # Convert to RGB shape (H, W, 3)
 
